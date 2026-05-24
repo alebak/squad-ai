@@ -39,8 +39,7 @@ func TestModel_InitialState(t *testing.T) {
 	// Agent with PreChecked=false is not checked
 	assert.False(t, m.checked[3], "aider should NOT be checked initially")
 
-	assert.False(t, m.submitted)
-	assert.Nil(t, m.err)
+	assert.False(t, m.isSubmitted)
 }
 
 func TestModel_CursorDown(t *testing.T) {
@@ -127,7 +126,7 @@ func TestModel_EnterConfirms(t *testing.T) {
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mFinal := mResult.(model)
 
-	assert.True(t, mFinal.submitted)
+	assert.True(t, mFinal.isSubmitted)
 	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, mFinal.selectedIDs())
 }
 
@@ -162,21 +161,21 @@ func TestModel_CtrlCQuits(t *testing.T) {
 	m := newModel(testAgents())
 
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	assert.False(t, mResult.(model).submitted)
+	assert.False(t, mResult.(model).isSubmitted)
 }
 
 func TestModel_EscapeQuits(t *testing.T) {
 	m := newModel(testAgents())
 
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	assert.False(t, mResult.(model).submitted)
+	assert.False(t, mResult.(model).isSubmitted)
 }
 
 func TestModel_QQuits(t *testing.T) {
 	m := newModel(testAgents())
 
 	m = updateModel(m, "q")
-	assert.False(t, m.submitted)
+	assert.False(t, m.isSubmitted)
 }
 
 func TestModel_EmptyAgents(t *testing.T) {
@@ -191,7 +190,7 @@ func TestModel_EmptyAgents(t *testing.T) {
 
 func TestModel_ViewRenders(t *testing.T) {
 	m := newModel(testAgents())
-	m.ready = true
+	m.isReady = true
 	m.width = 60
 
 	view := m.View()
@@ -207,8 +206,42 @@ func TestModel_ViewRenders(t *testing.T) {
 
 func TestModel_NotReady(t *testing.T) {
 	m := newModel(testAgents())
-	m.ready = false
+	m.isReady = false
 
 	view := m.View()
 	assert.Contains(t, view, "Loading...")
+}
+
+func TestModel_ToggleAll(t *testing.T) {
+	m := newModel(testAgents())
+
+	// All compatible unchecked? toggleAll should check all.
+	m.checked[0] = false
+	m.checked[1] = false
+
+	m = updateModel(m, "a")
+	assert.True(t, m.checked[0], "claude-code should be checked")
+	assert.True(t, m.checked[1], "opencode should be checked")
+	assert.True(t, m.checked[3], "aider should be checked")
+	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
+}
+
+func TestModel_ToggleAllDeselect(t *testing.T) {
+	m := newModel(testAgents())
+	m.checked[3] = true // manually check aider too
+
+	// All compatible checked? toggleAll should uncheck all.
+	m = updateModel(m, "a")
+	assert.False(t, m.checked[0], "claude-code should be unchecked")
+	assert.False(t, m.checked[1], "opencode should be unchecked")
+	assert.False(t, m.checked[3], "aider should be unchecked")
+	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
+}
+
+func TestModel_HelpIncludesToggleAll(t *testing.T) {
+	m := newModel(testAgents())
+	m.isReady = true
+
+	view := m.View()
+	assert.Contains(t, view, "a select all")
 }

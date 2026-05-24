@@ -56,16 +56,13 @@ var (
 // It implements tea.Model.
 type model struct {
 	agents    []AgentItem
-	cursor    int            // index of the currently highlighted agent
-	checked   map[int]bool   // agent index → checkbox state
-	ready     bool           // true after first WindowSizeMsg
+	cursor    int          // index of the currently highlighted agent
+	checked   map[int]bool // agent index → checkbox state
+	isReady   bool         // true after first WindowSizeMsg
 	width     int
 	height    int
-	submitted bool   // true when user pressed Enter
-	err       error  // fatal error, if any
+	isSubmitted bool // true when user pressed Enter
 	spinner   spinner.Model
-	installing bool
-	installMsg string
 }
 
 // newModel creates a model from the given agent items.
@@ -90,137 +87,156 @@ func newModel(agents []AgentItem) model {
 	}
 }
 
-// Init implements tea.Model. It requests the alternate screen and starts
-// the spinner (for future use during install phase).
+// Init implements tea.Model.
 func (m model) Init() tea.Cmd {
-	return tea.Batch(
-		tea.EnterAltScreen,
-		m.spinner.Tick,
-	)
+	return tea.Batch(tea.EnterAltScreen, m.spinner.Tick)
 }
 
 // Update implements tea.Model. It handles key events and window resize messages.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.ready = true
+		m.isReady = true
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
 
 	case tea.KeyMsg:
-		// Global quit keys — always work
-		if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEscape {
-			m.submitted = false
-			return m, tea.Quit
-		}
-
-		// All other keys only work if we're in selection mode
-		if m.submitted {
-			return m, nil
-		}
-
-		// Handle by key type (arrows, space, enter)
-		switch msg.Type {
-		case tea.KeyUp:
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = len(m.agents) - 1
-			}
-		case tea.KeyDown:
-			m.cursor++
-			if m.cursor >= len(m.agents) {
-				m.cursor = 0
-			}
-		case tea.KeySpace:
-			if !m.agents[m.cursor].Blocked {
-				m.checked[m.cursor] = !m.checked[m.cursor]
-			}
-		case tea.KeyEnter:
-			m.submitted = true
-			return m, tea.Quit
-		}
-
-		// Also handle vim-style keys (j/k/q) — these are tea.KeyRunes,
-		// not tea.KeyUp/tea.KeyDown, so no double-fire with the above.
-		switch msg.String() {
-		case "k":
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = len(m.agents) - 1
-			}
-		case "j":
-			m.cursor++
-			if m.cursor >= len(m.agents) {
-				m.cursor = 0
-			}
-		case "q":
-			m.submitted = false
-			return m, tea.Quit
-		}
+		return m.handleKeyMsg(msg)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 	}
+	return m, nil
+}
 
+func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEscape {
+		m.isSubmitted = false
+		return m, tea.Quit
+	}
+	if m.isSubmitted {
+		return m, nil
+	}
+	updated, quit := m.handleSpecialKey(msg)
+	m = updated
+	if quit {
+		return m, tea.Quit
+	}
+	return m.handleRuneKey(msg.String())
+}
+
+func (m model) handleSpecialKey(msg tea.KeyMsg) (model, bool) {
+	switch msg.Type {
+	case tea.KeyUp:
+		m.cursor--
+		if m.cursor < 0 {
+			m.cursor = len(m.agents) - 1
+		}
+	case tea.KeyDown:
+		m.cursor++
+		if m.cursor >= len(m.agents) {
+			m.cursor = 0
+		}
+	case tea.KeySpace:
+		if !m.agents[m.cursor].Blocked {
+			m.checked[m.cursor] = !m.checked[m.cursor]
+		}
+	case tea.KeyEnter:
+		m.isSubmitted = true
+		return m, true
+	}
+	return m, false
+}
+
+func (m model) handleRuneKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "a":
+		m.toggleAll()
+	case "k":
+		m.cursor--
+		if m.cursor < 0 {
+			m.cursor = len(m.agents) - 1
+		}
+	case "j":
+		m.cursor++
+		if m.cursor >= len(m.agents) {
+			m.cursor = 0
+		}
+	case "q":
+		m.isSubmitted = false
+		return m, tea.Quit
+	}
 	return m, nil
 }
 
 // View implements tea.Model. It renders the selection list.
 func (m model) View() string {
-	if !m.ready {
+	if !m.isReady {
 		return "Loading..."
 	}
 
 	var b strings.Builder
 
-	// ── Title ──
 	b.WriteString(styleTitle.Render("🤖 Select Your AI Coding Agents"))
 	b.WriteString("\n\n")
 
-	// ── Agent list ──
 	for i, agent := range m.agents {
-		// Cursor marker
-		cursor := "  "
-		if i == m.cursor {
-			cursor = styleCursor.Render("▸ ")
-		}
-
-		// Checkbox
-		checked := m.checked[i]
-		var checkbox string
-		if checked {
-			checkbox = styleChecked.Render("◉")
-		} else {
-			checkbox = "○"
-		}
-
-		// Agent name
-		name := agent.Name
-
-		// Blocked indicator
-		blockedSuffix := ""
-		if agent.Blocked {
-			blockedSuffix = fmt.Sprintf("  ⛔ %s", agent.BlockReason)
-		}
-
-		line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, blockedSuffix)
-
-		if agent.Blocked {
-			line = styleBlocked.Render(line)
-		}
-
-		b.WriteString(line)
+		b.WriteString(m.renderAgentRow(i, agent))
 		b.WriteString("\n")
 	}
 
-	// ── Help bar ──
 	b.WriteString("\n")
-	b.WriteString(styleHelp.Render("↑↓/jk navigate • space toggle • enter confirm • q quit"))
+	b.WriteString(styleHelp.Render(
+		"↑↓/jk navigate • space toggle • a select all • enter confirm • q quit",
+	))
 
 	return styleBorder.Render(b.String())
+}
+
+func (m model) renderAgentRow(i int, agent AgentItem) string {
+	cursor := "  "
+	if i == m.cursor {
+		cursor = styleCursor.Render("▸ ")
+	}
+
+	var checkbox string
+	if m.checked[i] {
+		checkbox = styleChecked.Render("◉")
+	} else {
+		checkbox = "○"
+	}
+
+	blockedSuffix := ""
+	if agent.Blocked {
+		blockedSuffix = fmt.Sprintf("  ⛔ %s", agent.BlockReason)
+	}
+
+	line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, agent.Name, blockedSuffix)
+	if agent.Blocked {
+		line = styleBlocked.Render(line)
+	}
+	return line
+}
+
+// toggleAll flips all compatible agents: if any are unchecked, check all;
+// if all are checked, uncheck all. Blocked agents are never affected.
+func (m *model) toggleAll() {
+	allChecked := true
+	for i, a := range m.agents {
+		if !a.Blocked && !m.checked[i] {
+			allChecked = false
+			break
+		}
+	}
+	for i, a := range m.agents {
+		if a.Blocked {
+			continue
+		}
+		m.checked[i] = !allChecked
+	}
 }
 
 // selectedIDs returns the list of checked agent IDs.
@@ -255,7 +271,7 @@ func RunSelection(agents []AgentItem) ([]string, error) {
 	}
 
 	m = finalModel.(model)
-	if !m.submitted {
+	if !m.isSubmitted {
 		return nil, nil
 	}
 
