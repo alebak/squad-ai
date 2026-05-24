@@ -22,26 +22,14 @@ export PATH="$HOME/.local/bin:$PATH"
 # fi
 # export PATH="$HOME/.npm-global/bin:$PATH"
 
-# Install Claude Code
-if command -v claude &>/dev/null; then
-  echo "✅ Claude Code already installed"
+# Install Squad AI — manages all coding agents
+if command -v squad &>/dev/null; then
+  echo "✅ Squad AI already installed"
 else
-  echo "📦 Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | bash
+  echo "📦 Installing Squad AI..."
+  curl -fsSL https://raw.githubusercontent.com/alebak/squad-ai/main/scripts/install.sh | bash
 fi
 
-# Install OpenCode
-if command -v opencode &>/dev/null; then
-  echo "✅ OpenCode already installed"
-else
-  echo "📦 Installing OpenCode..."
-  curl -fsSL https://opencode.ai/install | bash
-fi
-
-# Install gentle-ai
-if command -v gentle-ai &>/dev/null; then
-  echo "✅ gentle-ai already installed"
-else
-  echo "📦 Installing gentle-ai..."
-  curl -fsSL https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh | bash
-fi
+# Launch Squad AI — first run shows TUI, subsequent runs install silently
+echo "📦 Syncing agents via Squad AI..."
+squad
