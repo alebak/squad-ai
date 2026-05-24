@@ -9,14 +9,17 @@
       "install": {
         "method": "curl_bash",
         "url": "https://claude.ai/install.sh",
-        "command": ""
+        "command": "curl -fsSL https://claude.ai/install.sh | bash"
       },
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": null,
+      "checksum": {
+        "sha256": "b315b46925a9bfb9422f2503dd5aa649f680832f4c076b22d87c39d578c3d830",
+        "verified_at": "2026-05-24"
+      },
       "tags": ["anthropic", "claude"],
       "added_at": "2026-05-24"
     },
@@ -29,14 +32,17 @@
       "install": {
         "method": "curl_bash",
         "url": "https://opencode.ai/install",
-        "command": ""
+        "command": "curl -fsSL https://opencode.ai/install | bash"
       },
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": null,
+      "checksum": {
+        "sha256": "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e",
+        "verified_at": "2026-05-24"
+      },
       "tags": ["open-source", "opencode"],
       "added_at": "2026-05-24"
     },
@@ -49,14 +55,17 @@
       "install": {
         "method": "curl_bash",
         "url": "https://pi.dev/install.sh",
-        "command": ""
+        "command": "curl -fsSL https://pi.dev/install.sh | sh"
       },
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": null,
+      "checksum": {
+        "sha256": "583e42efc398d7141bdd48e125c47deddea16b70d4ecfa8f8d5059b540f3cb01",
+        "verified_at": "2026-05-24"
+      },
       "tags": ["pi", "assistant"],
       "added_at": "2026-05-24"
     },
@@ -89,14 +98,17 @@
       "install": {
         "method": "curl_bash",
         "url": "https://antigravity.google/cli/install.sh",
-        "command": ""
+        "command": "curl -fsSL https://antigravity.google/cli/install.sh | bash"
       },
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": null,
+      "checksum": {
+        "sha256": "ee1ea43ce4e9e56356c4ab6dad907ef357ae4bdfcaadb682735909fb57c9c640",
+        "verified_at": "2026-05-24"
+      },
       "tags": ["google", "experimental"],
       "added_at": "2026-05-24"
     },
@@ -129,14 +141,17 @@
       "install": {
         "method": "curl_bash",
         "url": "https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh",
-        "command": ""
+        "command": "curl -fsSL https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh | bash"
       },
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": null,
+      "checksum": {
+        "sha256": "a645a956c2895c844510eb1d455ecdb84d9648da9a44785b22a2bd143f8156ec",
+        "verified_at": "2026-05-24"
+      },
       "tags": ["gentle-ai", "structured"],
       "added_at": "2026-05-24"
     }
