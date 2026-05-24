@@ -20,9 +20,8 @@
     ".": {
       "package-name": "squad-ai",
       "changelog-path": "CHANGELOG.md",
-      "release-type": "simple",
-      "component": "",
-      "tag-separator": ""
+      "release-type": "simple"
+    }
     }
   }
 }
