@@ -7,6 +7,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is set at build time via ldflags. Defaults to "0.1.0" for
+// development builds.
+var version = "0.1.0"
+
 // NewRootCommand builds the root Cobra command tree for Squad AI.
 func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -20,7 +24,7 @@ from the saved configuration.
 
 Use 'squad add' to browse and add new agents at any time.
 Use 'squad install --agents <ids>' for non-interactive installation.`,
-		Version: "0.1.0",
+		Version: version,
 		RunE:    runRootFlow,
 	}
 	cmd.SetVersionTemplate("Squad AI version {{.Version}}\n")
