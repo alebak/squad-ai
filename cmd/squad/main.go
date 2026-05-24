@@ -7,6 +7,8 @@ import (
 )
 
 func main() {
+	cli.AutoUpdate()
+
 	if err := cli.NewRootCommand().Execute(); err != nil {
 		os.Exit(1)
 	}

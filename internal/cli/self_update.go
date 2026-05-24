@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -228,4 +229,83 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// AutoUpdate checks for a newer version and silently replaces the binary
+// if one is available. Call this at startup before any command runs.
+// If an update is applied, the process is re-exec'd and never returns.
+func AutoUpdate() {
+	autoUpdate()
+}
+
+// autoUpdate checks for a newer version on GitHub Releases and silently
+// updates the current binary if one is available. On success, it re-execs
+// the new binary with the same arguments and never returns.
+func autoUpdate() {
+	currentPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	release, err := fetchLatestRelease()
+	if err != nil {
+		return
+	}
+
+	current := strings.TrimPrefix(version, "v")
+	latest := strings.TrimPrefix(release.TagName, "v")
+	if current == latest || latest == "" {
+		return
+	}
+
+	assetName := fmt.Sprintf("squad-ai_%s_%s_%s.tar.gz",
+		latest, runtime.GOOS, runtime.GOARCH)
+	downloadURL := findAssetURL(release, assetName)
+	if downloadURL == "" {
+		return
+	}
+
+	checksumURL := findAssetURL(release, "checksums.txt")
+	if checksumURL == "" {
+		return
+	}
+
+	tmpDir, err := os.MkdirTemp("", "squad-update-*")
+	if err != nil {
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	archivePath := filepath.Join(tmpDir, assetName)
+	if err := downloadFile(downloadURL, archivePath); err != nil {
+		return
+	}
+
+	checksumPath := filepath.Join(tmpDir, "checksums.txt")
+	if err := downloadFile(checksumURL, checksumPath); err != nil {
+		return
+	}
+
+	if err := verifyAssetChecksum(archivePath, checksumPath, assetName); err != nil {
+		return
+	}
+
+	extractDir := filepath.Join(tmpDir, "extracted")
+	if err := os.MkdirAll(extractDir, 0755); err != nil {
+		return
+	}
+	if err := extractTarGz(archivePath, extractDir); err != nil {
+		return
+	}
+
+	newBinary := filepath.Join(extractDir, "squad")
+	if err := copyFile(newBinary, currentPath); err != nil {
+		return
+	}
+	if err := os.Chmod(currentPath, 0755); err != nil {
+		return
+	}
+
+	fmt.Printf("\n📦 Squad AI updated to %s — restarting...\n\n", release.TagName)
+	syscall.Exec(currentPath, os.Args, os.Environ())
 }
