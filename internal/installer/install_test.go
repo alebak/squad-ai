@@ -16,8 +16,9 @@ import (
 // executing actual install scripts.
 func safeAgent(id, cmd string) registry.Agent {
 	return registry.Agent{
-		ID:   id,
-		Name: id,
+		ID:        id,
+		Name:      id,
+		DetectCmd: "true",
 		Install: registry.InstallCmd{
 			Method:  registry.MethodCustom,
 			Command: cmd,

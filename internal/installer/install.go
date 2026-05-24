@@ -87,6 +87,9 @@ func InstallAgent(agent registry.Agent, progress ProgressFn) error {
 	if err := runAndLog(agent.ID, command, progress); err != nil {
 		return err
 	}
+	if !IsAgentInstalled(agent.DetectCmd) {
+		return fmt.Errorf("installing %s: command succeeded but %s binary not found in PATH", agent.ID, agent.DetectCmd)
+	}
 	return nil
 }
 
