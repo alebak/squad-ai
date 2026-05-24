@@ -1,0 +1,271 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/alebak/squad-ai/internal/config"
+	"github.com/alebak/squad-ai/internal/installer"
+	"github.com/alebak/squad-ai/internal/registry"
+	"github.com/alebak/squad-ai/internal/runtime"
+	"github.com/alebak/squad-ai/internal/tui"
+	"github.com/spf13/cobra"
+)
+
+// runtimeBlockReason checks an agent's runtime dependencies and returns a
+// human-readable reason if any dependency is not met. Returns empty string
+// if all dependencies are satisfied.
+func runtimeBlockReason(deps []registry.RuntimeDep) string {
+	for _, dep := range deps {
+		switch dep.Runtime {
+		case "none":
+			continue
+		case "node":
+			info := runtime.DetectNode()
+			if !info.Installed {
+				return "requires Node.js"
+			}
+			if dep.MinVersion != "" && !runtime.IsCompatible(info, dep.MinVersion) {
+				return fmt.Sprintf("requires Node.js %s+", dep.MinVersion)
+			}
+		case "go":
+			info := runtime.DetectGo()
+			if !info.Installed {
+				return "requires Go"
+			}
+			if dep.MinVersion != "" && !runtime.IsCompatible(info, dep.MinVersion) {
+				return fmt.Sprintf("requires Go %s+", dep.MinVersion)
+			}
+		case "python":
+			info := runtime.DetectPython()
+			if !info.Installed {
+				return "requires Python 3"
+			}
+			if dep.MinVersion != "" && !runtime.IsCompatible(info, dep.MinVersion) {
+				return fmt.Sprintf("requires Python %s+", dep.MinVersion)
+			}
+		default:
+			return fmt.Sprintf("requires unknown runtime: %s", dep.Runtime)
+		}
+	}
+	return ""
+}
+
+// isTerminal reports whether stdin is a character device (TTY).
+func isTerminal() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+// addHandler holds injectable functions for the add command.
+type addHandler struct {
+	registryURL   string
+	loadConfig    func(path string) (*config.Config, error)
+	fetchRegistry func(ctx context.Context, url string) (*registry.Catalog, error)
+	detectAll     func(agents []registry.Agent) map[string]bool
+	installAll    func(agents []registry.Agent, progress installer.ProgressFn) []error
+	runSelection  func(items []tui.AgentItem) ([]string, error)
+	isRuntimeMet  func(deps []registry.RuntimeDep) bool
+	configPath    func() (string, error)
+	isTerminal    func() bool
+}
+
+// defaultAddHandler returns an addHandler wired to real implementations.
+func defaultAddHandler() *addHandler {
+	return &addHandler{
+		registryURL:   "https://raw.githubusercontent.com/alebak/squad-ai/main/registry/agents.json",
+		loadConfig:    config.Load,
+		fetchRegistry: registry.Fetch,
+		detectAll:     installer.DetectAll,
+		installAll:    installer.InstallAll,
+		runSelection:  tui.RunSelection,
+		isRuntimeMet:  defaultIsRuntimeMet,
+		configPath:    config.ConfigPath,
+		isTerminal:    isTerminal,
+	}
+}
+
+// runAddFlow executes the core agent selection and installation flow:
+// 1. Fetch registry, detect installed, check runtimes
+// 2. Build AgentItems for available agents
+// 3. Dispatch to interactive or non-interactive path
+// 4. Save updated config
+//
+// Returns the updated config so callers can inspect the result.
+func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
+	cfgPath, err := h.configPath()
+	if err != nil {
+		return nil, fmt.Errorf("determining config path: %w", err)
+	}
+	cfg, err := h.loadConfig(cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	selected := make(map[string]bool, len(cfg.SelectedAgents))
+	for _, id := range cfg.SelectedAgents {
+		selected[id] = true
+	}
+
+	catalog, err := h.fetchRegistry(context.Background(), h.registryURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetching registry: %w\nTry again when online or use a cached registry.", err)
+	}
+	if len(catalog.Agents) == 0 {
+		cmd.Println("No agents found in the registry.")
+		return cfg, nil
+	}
+
+	agentItems := buildAgentItemsForAdd(h, catalog, selected)
+	if len(agentItems) == 0 {
+		cmd.Println("No new agents available. All compatible agents are already installed or selected.")
+		cmd.Println("Run 'squad list' to see the full registry.")
+		return cfg, nil
+	}
+
+	if !h.isTerminal() {
+		return runAddFlowNonInteractive(h, cmd, agentItems, cfg)
+	}
+	return runAddFlowInteractive(h, cmd, agentItems, catalog, cfg, cfgPath)
+}
+
+// buildAgentItemsForAdd filters the registry catalog to agents not already
+// installed or selected, checks runtime compatibility, and builds TUI items.
+func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, selected map[string]bool) []tui.AgentItem {
+	installed := h.detectAll(catalog.Agents)
+
+	var agentItems []tui.AgentItem
+	for _, agent := range catalog.Agents {
+		if installed[agent.ID] {
+			continue
+		}
+		if selected[agent.ID] {
+			continue
+		}
+
+		blocked := !h.isRuntimeMet(agent.Dependencies)
+		reason := ""
+		if blocked {
+			reason = runtimeBlockReason(agent.Dependencies)
+		}
+
+		agentItems = append(agentItems, tui.AgentItem{
+			ID:          agent.ID,
+			Name:        agent.Name,
+			Description: agent.Description,
+			PreChecked:  !blocked,
+			Blocked:     blocked,
+			BlockReason: reason,
+		})
+	}
+	return agentItems
+}
+
+// runAddFlowNonInteractive prints available agents and exits when running
+// without a TTY.
+func runAddFlowNonInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, cfg *config.Config) (*config.Config, error) {
+	cmd.Println("No interactive terminal detected.")
+	cmd.Println("Use 'squad install --agents <ids>' to install agents non-interactively.")
+	cmd.Println("Available agents:")
+	for _, a := range agentItems {
+		blocked := ""
+		if a.Blocked {
+			blocked = fmt.Sprintf(" [blocked: %s]", a.BlockReason)
+		}
+		cmd.Printf("  - %s (%s)%s\n", a.ID, a.Name, blocked)
+	}
+	return cfg, nil
+}
+
+// runAddFlowInteractive launches the TUI for agent selection, installs the
+// chosen agents, and saves the updated config.
+func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, catalog *registry.Catalog, cfg *config.Config, cfgPath string) (*config.Config, error) {
+	selectedIDs, err := h.runSelection(agentItems)
+	if err != nil {
+		return nil, fmt.Errorf("TUI selection failed: %w", err)
+	}
+
+	if len(selectedIDs) == 0 {
+		cmd.Println("No agents selected. Nothing to install.")
+		return cfg, nil
+	}
+
+	var toInstall []registry.Agent
+	for _, id := range selectedIDs {
+		for _, a := range catalog.Agents {
+			if a.ID == id {
+				toInstall = append(toInstall, a)
+				break
+			}
+		}
+	}
+
+	cmd.Println("Installing selected agents...")
+	progress := func(agentID string, pct int) {
+		if pct == 100 {
+			for _, a := range toInstall {
+				if a.ID == agentID {
+					cmd.Printf("✅ %s installed\n", a.Name)
+					break
+				}
+			}
+		}
+	}
+
+	results := h.installAll(toInstall, progress)
+
+	var hasErrors bool
+	var succeeded []string
+	for i, err := range results {
+		if err != nil {
+			hasErrors = true
+			cmd.Printf("❌ %s — %v\n", toInstall[i].Name, err)
+		} else {
+			succeeded = append(succeeded, toInstall[i].ID)
+		}
+	}
+
+	cfg.SelectedAgents = append(cfg.SelectedAgents, succeeded...)
+	if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
+		cmd.Printf("Warning: failed to save config: %v\n", saveErr)
+	}
+
+	if hasErrors {
+		return cfg, fmt.Errorf("one or more installations failed")
+	}
+
+	return cfg, nil
+}
+
+// newAddCommand creates the add subcommand.
+func newAddCommand() *cobra.Command {
+	return newAddCommandWithHandler(defaultAddHandler())
+}
+
+// newAddCommandWithHandler creates the add subcommand with a given handler,
+// enabling dependency injection for testing.
+func newAddCommandWithHandler(h *addHandler) *cobra.Command {
+	return &cobra.Command{
+		Use:   "add",
+		Short: "Browse and add AI coding agents",
+		Long: `Browse available AI coding agents from the registry using an
+interactive TUI. Select agents to install, then confirm to begin installation.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := runAddFlow(h, cmd)
+			return err
+		},
+	}
+}
+
+// formatAgentIDs formats a slice of agent IDs for user-friendly display.
+func formatAgentIDs(ids []string) string {
+	if len(ids) == 0 {
+		return "(none)"
+	}
+	return strings.Join(ids, ", ")
+}
