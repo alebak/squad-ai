@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0](https://github.com/alebak/squad-ai/compare/squad-ai-v0.2.0...squad-ai-v0.3.0) (2026-05-24)
+
+
+### Features
+
+* add GoReleaser config, install script, and ldflags version support ([6a20578](https://github.com/alebak/squad-ai/commit/6a20578cbf951da841e951f540cc2b37aee34e3d))
+* bootstrap Go project with squad version command ([1d1321b](https://github.com/alebak/squad-ai/commit/1d1321b6772218ec814f3b858e37e0c266107e3d))
+* **cli:** add install, list, add, remove, update, and info commands ([70305b7](https://github.com/alebak/squad-ai/commit/70305b7f39a05ce87d68817718f6d2649339ff29))
+* **config:** add user config with atomic load/save ([9850a6a](https://github.com/alebak/squad-ai/commit/9850a6a49dcbccba8c862272b51b2c1fa5d50449))
+* **installer:** add agent detection and installation pipeline ([a2aa886](https://github.com/alebak/squad-ai/commit/a2aa886e54c45f01827c4242d34ab6588fb323b1))
+* **registry:** add agent types, HTTP fetch, and local cache ([23be0e4](https://github.com/alebak/squad-ai/commit/23be0e4d88220ef094be28d0f0e5e0ed3b3e7104))
+* **runtime:** add Node.js, Go, and Python version detection ([bba5dc0](https://github.com/alebak/squad-ai/commit/bba5dc0a2963a4632f3d4cab02056ec48f3265ae))
+* **tui:** add interactive agent selection with Bubbletea ([a93a285](https://github.com/alebak/squad-ai/commit/a93a285cb272ca7e0b43c2b7d17305973e556e47))
+
+
+### Bug Fixes
+
+* display Squad AI product name in version output ([bd528f7](https://github.com/alebak/squad-ai/commit/bd528f78dc3c9167fe11a27ab9976b2c34b08927))
+* feat commits should bump minor version pre-1.0 ([e9b0480](https://github.com/alebak/squad-ai/commit/e9b048019dbccf21f465b0256c71dca000a03615))
+* **registry:** add install commands and SHA-256 checksums for all agents ([35492c7](https://github.com/alebak/squad-ai/commit/35492c7b2a064a2a438848961a6e22a2bc855279))
+* use clean tag format for release-please ([9e2294a](https://github.com/alebak/squad-ai/commit/9e2294accbf80ada9c66cca3c49ec9737eab9cb1))
+
+
+### Documentation
+
+* add project documentation ([4281cc2](https://github.com/alebak/squad-ai/commit/4281cc2a9e3b3dbed507544a63bc0cf9af0da616))
+* rewrite README with bilingual content and usage examples ([c7d9a67](https://github.com/alebak/squad-ai/commit/c7d9a673ffcb15068cb38e07c1e8ca6fe81dec59))
+* split README into English and Spanish, update author name ([8524856](https://github.com/alebak/squad-ai/commit/8524856fce77779bbb387eefed504cd0d3fc3c16))
+
+
+### Code Refactoring
+
+* **cli:** split long functions into helpers, remove dead code ([73fba2d](https://github.com/alebak/squad-ai/commit/73fba2db9dd29748cb241b9a8e302d0b5937ec00))
+
 ## [0.2.0](https://github.com/alebak/squad-ai/compare/squad-ai-v0.1.0...squad-ai-v0.2.0) (2026-05-24)
 
 
