@@ -189,7 +189,7 @@ func updateConfigAfterInstall(h *installHandler, cmd *cobra.Command, cfg *config
 	}
 
 	newAgents := findNewAgents(cfg, catalog)
-	if len(newAgents) > 0 {
+	if len(newAgents) > 0 && len(cfg.RegistryKnown) > 0 {
 		cmd.Println("ℹ️  New agents available in the registry:")
 		for _, a := range newAgents {
 			cmd.Printf("   • %s — %s\n", a.Name, a.Description)

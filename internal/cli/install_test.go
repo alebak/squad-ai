@@ -491,6 +491,38 @@ func TestInstallCommand_NoNotificationWhenAllKnown(t *testing.T) {
 	assert.NotContains(t, output, "New agents available")
 }
 
+func TestInstallCommand_NoNotificationOnFirstRun(t *testing.T) {
+	buf := new(bytes.Buffer)
+
+	h := &installHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			// First run: no config file, defaults have empty RegistryKnown
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": false}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return []error{nil}
+		},
+		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
+		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
+	}
+
+	cmd := newInstallCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	assert.NoError(t, err)
+
+	assert.NotContains(t, buf.String(), "New agents available")
+}
+
 func TestParseAgentIDs(t *testing.T) {
 	tests := []struct {
 		name  string
