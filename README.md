@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](https://github.com/alebak/squad-ai)
 
+> Lea este documento en [español](README.es.md).
+
 ---
 
 ## What It Does
@@ -105,45 +107,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow. Quick overview:
 
 Questions? Use [Discussions](https://github.com/alebak/squad-ai/discussions), not issues.
 
----
-
-## Español / Spanish
-
-Squad AI es un CLI en Go que gestiona la instalación de coding agents dentro de dev containers. Reemplaza los scripts `post-create.sh` manuales por una herramienta unificada.
-
-### Instalación rápida
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alebak/squad-ai/main/scripts/install.sh | bash
-```
-
-### Uso
-
-| Comando | Descripción |
-|---------|-------------|
-| `squad add` | TUI interactivo para elegir agentes |
-| `squad install` | Instala los agentes seleccionados |
-| `squad install --agents a,b,c` | Instala agentes específicos sin TUI |
-| `squad list` | Lista agentes: instalados, disponibles, bloqueados |
-| `squad info <id>` | Detalle de un agente |
-| `squad remove <id>` | Quita un agente de tu configuración |
-| `squad update` | Actualiza el registro de agentes |
-| `squad version` | Versión de Squad AI |
-
-### ¿Cómo funciona?
-
-1. **Registro** — `registry/agents.json` lista los agentes disponibles con comandos de instalación, dependencias y checksums.
-2. **Cache local** — squad descarga y cachea el registro en `~/.config/squad-ai/`.
-3. **Detección** — verifica qué agentes ya están instalados y qué runtimes faltan.
-4. **Instalación** — ejecuta los comandos, captura logs, verifica checksums y guarda tu selección.
-5. **TUI** — `squad add` abre una interfaz interactiva para explorar y seleccionar agentes.
-
-### Contribuir
-
-Ver [CONTRIBUTING.md](CONTRIBUTING.md). El proyecto usa conventional commits, branch naming (`feat/`, `fix/`), y un flujo issue-first. Las contribuciones son bienvenidas.
-
----
-
 ## License
 
-MIT © [Alejandro Arroyave](https://github.com/alebak)
+MIT © [Alebak](https://github.com/alebak)

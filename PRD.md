@@ -1,7 +1,7 @@
 # Squad AI — Product Requirements Document
 
 **Version:** 0.1.0
-**Author:** Alejandro Arroyave
+**Author:** Alebak
 **Date:** 2026-05-23
 **Repository:** https://github.com/alebak/squad-ai
 **License:** MIT
