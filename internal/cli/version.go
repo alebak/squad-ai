@@ -1,0 +1,13 @@
+package cli
+
+import "github.com/spf13/cobra"
+
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of Squad AI",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Printf("%s version %s\n", cmd.Root().Name(), cmd.Root().Version)
+		},
+	}
+}

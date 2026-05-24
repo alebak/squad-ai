@@ -21,6 +21,9 @@ profile.cov
 # vendor/
 
 # Go workspace file
+# Compiled binary
+/squad
+
 go.work
 go.work.sum
 
