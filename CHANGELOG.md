@@ -1,5 +1,7 @@
 # Changelog
 
+# Changelog
+
 ## [0.5.0](https://github.com/alebak/squad-ai/compare/squad-aiv0.4.0...squad-aiv0.5.0) (2026-05-24)
 
 
