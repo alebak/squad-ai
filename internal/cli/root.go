@@ -40,9 +40,8 @@ Use 'squad install --agents <ids>' for non-interactive installation.`,
 	return cmd
 }
 
-// runRootFlow implements the root command's RunE. It detects whether this is
-// a first run (no config.json found) and launches the interactive TUI flow
-// if so. If config exists, it prints a brief message and exits.
+// runRootFlow launches the interactive TUI to view and manage all agents.
+// It always shows the full agent list regardless of whether config exists.
 func runRootFlow(cmd *cobra.Command, args []string) error {
 	cfgPath, err := config.ConfigPath()
 	if err != nil {
@@ -54,16 +53,11 @@ func runRootFlow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading config: %w", err)
 	}
 
-	// If config has agents, this is not a first run. Print status and exit.
-	if len(cfg.SelectedAgents) > 0 {
-		cmd.Printf("✅ Squad AI is configured with %d agent(s).\n", len(cfg.SelectedAgents))
-		cmd.Println("Run 'squad install' to sync, or 'squad add' to browse new agents.")
-		return nil
+	if len(cfg.SelectedAgents) == 0 {
+		cmd.Println("👋 Welcome to Squad AI! Let's set up your coding agents.")
+		cmd.Println()
 	}
 
-	// First run — launch the interactive selection flow.
-	cmd.Println("👋 Welcome to Squad AI! Let's set up your coding agents.")
-	cmd.Println()
 	_, err = runAddFlow(defaultAddHandler(), cmd)
 	return err
 }
