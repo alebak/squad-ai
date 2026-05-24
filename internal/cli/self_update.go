@@ -221,14 +221,20 @@ func copyFile(src, dst string) error {
 	}
 	defer srcFile.Close()
 
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	tmpPath := dst + ".tmp"
+	dstFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
 	defer dstFile.Close()
 
-	_, err = io.Copy(dstFile, srcFile)
-	return err
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	dstFile.Close()
+
+	return os.Rename(tmpPath, dst)
 }
 
 // AutoUpdate checks for a newer version and silently replaces the binary
@@ -238,10 +244,17 @@ func AutoUpdate() {
 	autoUpdate()
 }
 
-// autoUpdate checks for a newer version on GitHub Releases and silently
-// updates the current binary if one is available. On success, it re-execs
-// the new binary with the same arguments and never returns.
+// autoUpdate checks for a newer version on GitHub Releases and replaces
+// the current binary if one is available. On success, it re-execs the
+// new binary and never returns. Errors are logged to stderr but never
+// prevent the command from running.
 func autoUpdate() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "squad: auto-update panic: %v\n", r)
+		}
+	}()
+
 	currentPath, err := os.Executable()
 	if err != nil {
 		return
@@ -249,6 +262,7 @@ func autoUpdate() {
 
 	release, err := fetchLatestRelease()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "squad: auto-update check failed: %v\n", err)
 		return
 	}
 
@@ -258,54 +272,66 @@ func autoUpdate() {
 		return
 	}
 
+	fmt.Fprintf(os.Stderr, "squad: updating from %s to %s...\n", current, latest)
+
 	assetName := fmt.Sprintf("squad-ai_%s_%s_%s.tar.gz",
 		latest, runtime.GOOS, runtime.GOARCH)
 	downloadURL := findAssetURL(release, assetName)
 	if downloadURL == "" {
+		fmt.Fprintf(os.Stderr, "squad: no binary found for %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		return
 	}
 
 	checksumURL := findAssetURL(release, "checksums.txt")
 	if checksumURL == "" {
+		fmt.Fprintf(os.Stderr, "squad: no checksums found for release %s\n", release.TagName)
 		return
 	}
 
 	tmpDir, err := os.MkdirTemp("", "squad-update-*")
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "squad: temp dir error: %v\n", err)
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, assetName)
 	if err := downloadFile(downloadURL, archivePath); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: download error: %v\n", err)
 		return
 	}
 
 	checksumPath := filepath.Join(tmpDir, "checksums.txt")
 	if err := downloadFile(checksumURL, checksumPath); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: checksum download error: %v\n", err)
 		return
 	}
 
 	if err := verifyAssetChecksum(archivePath, checksumPath, assetName); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: checksum verification failed: %v\n", err)
 		return
 	}
 
 	extractDir := filepath.Join(tmpDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: extract dir error: %v\n", err)
 		return
 	}
 	if err := extractTarGz(archivePath, extractDir); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: extract error: %v\n", err)
 		return
 	}
 
 	newBinary := filepath.Join(extractDir, "squad")
 	if err := copyFile(newBinary, currentPath); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: copy error: %v\n", err)
 		return
 	}
 	if err := os.Chmod(currentPath, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "squad: chmod error: %v\n", err)
 		return
 	}
 
-	fmt.Printf("\n📦 Squad AI updated to %s — restarting...\n\n", release.TagName)
+	fmt.Fprintf(os.Stderr, "squad: updated to %s, restarting...\n", release.TagName)
 	syscall.Exec(currentPath, os.Args, os.Environ())
 }
