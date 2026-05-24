@@ -1,0 +1,145 @@
+{
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "description": "Anthropic's AI coding agent for terminal-based development",
+      "version": "latest",
+      "detect_command": "claude",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://claude.ai/install.sh",
+        "command": ""
+      },
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
+      "checksum": null,
+      "tags": ["anthropic", "claude"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "description": "An open-source AI coding agent for terminal-based development",
+      "version": "latest",
+      "detect_command": "opencode",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://opencode.ai/install",
+        "command": ""
+      },
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
+      "checksum": null,
+      "tags": ["open-source", "opencode"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "pi",
+      "name": "Pi",
+      "description": "A lightweight AI coding assistant for the terminal",
+      "version": "latest",
+      "detect_command": "pi",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://pi.dev/install.sh",
+        "command": ""
+      },
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
+      "checksum": null,
+      "tags": ["pi", "assistant"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "codex",
+      "name": "Codex CLI",
+      "description": "OpenAI's terminal-based AI coding agent",
+      "version": "latest",
+      "detect_command": "codex",
+      "install": {
+        "method": "npm_install",
+        "url": "",
+        "command": "npm i -g @openai/codex"
+      },
+      "dependencies": [
+        {
+          "runtime": "node"
+        }
+      ],
+      "checksum": null,
+      "tags": ["openai", "codex"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "antigravity-cli",
+      "name": "Antigravity CLI",
+      "description": "Google's experimental AI coding agent",
+      "version": "latest",
+      "detect_command": "agy",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://antigravity.google/cli/install.sh",
+        "command": ""
+      },
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
+      "checksum": null,
+      "tags": ["google", "experimental"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "description": "Google's Gemini-powered AI coding assistant for the terminal",
+      "version": "latest",
+      "detect_command": "gemini",
+      "install": {
+        "method": "npm_install",
+        "url": "",
+        "command": "npm install -g @google/gemini-cli"
+      },
+      "dependencies": [
+        {
+          "runtime": "node"
+        }
+      ],
+      "checksum": null,
+      "tags": ["google", "gemini"],
+      "added_at": "2026-05-24"
+    },
+    {
+      "id": "gentle-ai",
+      "name": "Gentle AI",
+      "description": "An opinionated AI coding agent with structured workflows",
+      "version": "latest",
+      "detect_command": "gentle-ai",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh",
+        "command": ""
+      },
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
+      "checksum": null,
+      "tags": ["gentle-ai", "structured"],
+      "added_at": "2026-05-24"
+    }
+  ],
+  "updated_at": "2026-05-24"
+}
