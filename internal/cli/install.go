@@ -82,15 +82,12 @@ func defaultInstallHandler() *installHandler {
 }
 
 // runInstallFlow executes the core install logic:
-// 1. Read config, 2. Fetch registry, 3. Determine targets,
-// 4. Detect installed, 5. Filter & install, 6. Report results,
-// 7. Update config.
+// read config, fetch registry, determine targets, detect installed,
+// filter, install, report results, and update config.
 func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agentsFlag string, allFlag bool) error {
 	if agentsFlag != "" && allFlag {
 		return fmt.Errorf("--agents and --all are mutually exclusive")
 	}
-
-	// 1. Read config
 	cfgPath, err := h.configPath()
 	if err != nil {
 		return fmt.Errorf("determining config path: %w", err)
@@ -99,8 +96,6 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
 	}
-
-	// 2. Fetch registry (or cache)
 	catalog, err := h.fetchRegistry(context.Background(), h.registryURL)
 	if err != nil {
 		return fmt.Errorf("fetching registry: %w\nTry again when online or use a cached registry.", err)
@@ -109,28 +104,41 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 		cmd.Println("No agents found in the registry.")
 		return nil
 	}
-
-	// 3. Determine target agents
-	var targets []registry.Agent
-	switch {
-	case agentsFlag != "":
-		ids := parseAgentIDs(agentsFlag)
-		targets = filterAgentsByID(catalog.Agents, ids)
-	case allFlag:
-		targets = catalog.Agents
-	default:
-		targets = filterAgentsByID(catalog.Agents, cfg.SelectedAgents)
-	}
-
+	targets := determineTargetAgents(catalog.Agents, agentsFlag, allFlag, cfg.SelectedAgents)
 	if len(targets) == 0 {
 		cmd.Println("No agents to install.")
 		return nil
 	}
-
-	// 4. Detect already installed
 	installed := h.detectAll(targets)
+	toInstall := filterInstallableAgents(h, cmd, targets, installed)
+	if len(toInstall) == 0 {
+		return nil
+	}
+	results := h.installAll(toInstall, makeProgressFn(cmd, toInstall))
+	hasErrors := reportInstallResults(cmd, toInstall, results)
+	updateConfigAfterInstall(h, cmd, cfg, catalog, cfgPath, agentsFlag)
+	if hasErrors {
+		return fmt.Errorf("one or more installations failed")
+	}
+	return nil
+}
 
-	// 5. Filter and install
+// determineTargetAgents resolves which agents to target based on flags and config.
+func determineTargetAgents(agents []registry.Agent, agentsFlag string, allFlag bool, selected []string) []registry.Agent {
+	switch {
+	case agentsFlag != "":
+		ids := parseAgentIDs(agentsFlag)
+		return filterAgentsByID(agents, ids)
+	case allFlag:
+		return agents
+	default:
+		return filterAgentsByID(agents, selected)
+	}
+}
+
+// filterInstallableAgents filters targets to those not yet installed and with
+// runtime requirements met.
+func filterInstallableAgents(h *installHandler, cmd *cobra.Command, targets []registry.Agent, installed map[string]bool) []registry.Agent {
 	var toInstall []registry.Agent
 	for _, agent := range targets {
 		if installed[agent.ID] {
@@ -143,13 +151,12 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 		}
 		toInstall = append(toInstall, agent)
 	}
+	return toInstall
+}
 
-	if len(toInstall) == 0 {
-		return nil
-	}
-
-	// 6. Install
-	progress := func(agentID string, pct int) {
+// makeProgressFn creates an install progress callback that prints to cmd.
+func makeProgressFn(cmd *cobra.Command, toInstall []registry.Agent) installer.ProgressFn {
+	return func(agentID string, pct int) {
 		if pct == 100 {
 			for _, a := range toInstall {
 				if a.ID == agentID {
@@ -159,10 +166,11 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 			}
 		}
 	}
+}
 
-	results := h.installAll(toInstall, progress)
-
-	// 7. Report failures
+// reportInstallResults prints installation results to cmd and returns whether
+// any failures occurred.
+func reportInstallResults(cmd *cobra.Command, toInstall []registry.Agent, results []error) bool {
 	var hasErrors bool
 	for i, err := range results {
 		if err != nil {
@@ -170,13 +178,16 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 			cmd.Printf("❌ %s — %v\n", toInstall[i].Name, err)
 		}
 	}
+	return hasErrors
+}
 
-	// 8. Update selected agents if --agents flag was used
+// updateConfigAfterInstall saves the config with updated registry tracking and
+// notifies the user about newly available agents.
+func updateConfigAfterInstall(h *installHandler, cmd *cobra.Command, cfg *config.Config, catalog *registry.Catalog, cfgPath string, agentsFlag string) {
 	if agentsFlag != "" {
 		cfg.SelectedAgents = parseAgentIDs(agentsFlag)
 	}
 
-	// 9. Notify about new agents in the registry
 	newAgents := findNewAgents(cfg, catalog)
 	if len(newAgents) > 0 {
 		cmd.Println("ℹ️  New agents available in the registry:")
@@ -186,7 +197,6 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 		cmd.Println("Run 'squad add' to explore them.")
 	}
 
-	// 10. Update registry tracking and save config
 	allIDs := make([]string, len(catalog.Agents))
 	for i, a := range catalog.Agents {
 		allIDs[i] = a.ID
@@ -196,11 +206,6 @@ func runInstallFlow(h *installHandler, cmd *cobra.Command, args []string, agents
 	if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
 		cmd.Printf("Warning: failed to save config: %v\n", saveErr)
 	}
-
-	if hasErrors {
-		return fmt.Errorf("one or more installations failed")
-	}
-	return nil
 }
 
 // newInstallCommand creates the install subcommand.

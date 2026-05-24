@@ -19,7 +19,6 @@ func TestInfoCommand_ShowsDetails(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return testRegistry(), nil
 		},
-		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
 	}
 
 	cmd := newInfoCommandWithHandler(h)
@@ -43,7 +42,6 @@ func TestInfoCommand_AgentNotFound(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return testRegistry(), nil
 		},
-		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
 	}
 
 	cmd := newInfoCommandWithHandler(h)
@@ -69,7 +67,6 @@ func TestInfoCommand_RegistryFetchFailure(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return nil, errors.New("connection refused")
 		},
-		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
 	}
 
 	cmd := newInfoCommandWithHandler(h)
@@ -88,7 +85,6 @@ func TestInfoCommand_AgentWithRuntimeDep(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return testRegistry(), nil
 		},
-		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
 	}
 
 	cmd := newInfoCommandWithHandler(h)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alebak/squad-ai/internal/config"
 	"github.com/alebak/squad-ai/internal/registry"
 	"github.com/spf13/cobra"
 )
@@ -14,7 +13,6 @@ import (
 type infoHandler struct {
 	registryURL   string
 	fetchRegistry func(ctx context.Context, url string) (*registry.Catalog, error)
-	configPath    func() (string, error)
 }
 
 // defaultInfoHandler returns an infoHandler wired to real implementations.
@@ -22,7 +20,6 @@ func defaultInfoHandler() *infoHandler {
 	return &infoHandler{
 		registryURL:   "https://raw.githubusercontent.com/alebak/squad-ai/main/registry/agents.json",
 		fetchRegistry: registry.Fetch,
-		configPath:    config.ConfigPath,
 	}
 }
 
@@ -52,13 +49,11 @@ and description.`,
 func runInfoFlow(h *infoHandler, cmd *cobra.Command, args []string) error {
 	agentID := strings.TrimSpace(args[0])
 
-	// 1. Fetch registry
 	catalog, err := h.fetchRegistry(context.Background(), h.registryURL)
 	if err != nil {
 		return fmt.Errorf("fetching registry: %w\nTry again when online or use a cached registry.", err)
 	}
 
-	// 2. Find agent by ID
 	var agent *registry.Agent
 	for i, a := range catalog.Agents {
 		if a.ID == agentID {
@@ -66,19 +61,24 @@ func runInfoFlow(h *infoHandler, cmd *cobra.Command, args []string) error {
 			break
 		}
 	}
-
 	if agent == nil {
 		return fmt.Errorf("agent %q not found in registry", agentID)
 	}
 
-	// 3. Build runtime display
+	printAgentDetails(cmd, agent, buildRuntimeDisplay(agent.Dependencies))
+	return nil
+}
+
+// buildRuntimeDisplay builds a human-readable runtime dependency string.
+func buildRuntimeDisplay(deps []registry.RuntimeDep) string {
 	var runtimes []string
-	for _, dep := range agent.Dependencies {
-		if dep.Runtime == "none" {
+	for _, dep := range deps {
+		switch {
+		case dep.Runtime == "none":
 			runtimes = append(runtimes, "none (self-contained)")
-		} else if dep.MinVersion != "" {
+		case dep.MinVersion != "":
 			runtimes = append(runtimes, fmt.Sprintf("%s %s+", dep.Runtime, dep.MinVersion))
-		} else {
+		default:
 			runtimes = append(runtimes, dep.Runtime)
 		}
 	}
@@ -86,8 +86,11 @@ func runInfoFlow(h *infoHandler, cmd *cobra.Command, args []string) error {
 	if runtimeStr == "" {
 		runtimeStr = "none"
 	}
+	return runtimeStr
+}
 
-	// 4. Print details
+// printAgentDetails prints formatted agent details to cmd.
+func printAgentDetails(cmd *cobra.Command, agent *registry.Agent, runtimeStr string) {
 	cmd.Printf("Agent:     %s\n", agent.Name)
 	cmd.Printf("ID:        %s\n", agent.ID)
 	cmd.Printf("Version:   %s\n", agent.Version)
@@ -101,6 +104,4 @@ func runInfoFlow(h *infoHandler, cmd *cobra.Command, args []string) error {
 	if len(agent.Tags) > 0 {
 		cmd.Printf("Tags:      %s\n", strings.Join(agent.Tags, ", "))
 	}
-
-	return nil
 }

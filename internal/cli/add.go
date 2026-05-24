@@ -189,36 +189,44 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 	if err != nil {
 		return nil, fmt.Errorf("TUI selection failed: %w", err)
 	}
-
 	if len(selectedIDs) == 0 {
 		cmd.Println("No agents selected. Nothing to install.")
 		return cfg, nil
 	}
 
-	var toInstall []registry.Agent
-	for _, id := range selectedIDs {
+	toInstall := findAgentsByIDs(catalog, selectedIDs)
+	cmd.Println("Installing selected agents...")
+	results := h.installAll(toInstall, makeProgressFn(cmd, toInstall))
+
+	succeeded, hasErrors := reportAddResults(cmd, toInstall, results)
+	cfg.SelectedAgents = append(cfg.SelectedAgents, succeeded...)
+	if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
+		cmd.Printf("Warning: failed to save config: %v\n", saveErr)
+	}
+
+	if hasErrors {
+		return cfg, fmt.Errorf("one or more installations failed")
+	}
+	return cfg, nil
+}
+
+// findAgentsByIDs locates agents in the catalog matching the given IDs.
+func findAgentsByIDs(catalog *registry.Catalog, ids []string) []registry.Agent {
+	var agents []registry.Agent
+	for _, id := range ids {
 		for _, a := range catalog.Agents {
 			if a.ID == id {
-				toInstall = append(toInstall, a)
+				agents = append(agents, a)
 				break
 			}
 		}
 	}
+	return agents
+}
 
-	cmd.Println("Installing selected agents...")
-	progress := func(agentID string, pct int) {
-		if pct == 100 {
-			for _, a := range toInstall {
-				if a.ID == agentID {
-					cmd.Printf("✅ %s installed\n", a.Name)
-					break
-				}
-			}
-		}
-	}
-
-	results := h.installAll(toInstall, progress)
-
+// reportAddResults reports installation results to cmd and returns the
+// IDs of successfully installed agents and whether any failures occurred.
+func reportAddResults(cmd *cobra.Command, toInstall []registry.Agent, results []error) ([]string, bool) {
 	var hasErrors bool
 	var succeeded []string
 	for i, err := range results {
@@ -229,17 +237,7 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 			succeeded = append(succeeded, toInstall[i].ID)
 		}
 	}
-
-	cfg.SelectedAgents = append(cfg.SelectedAgents, succeeded...)
-	if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
-		cmd.Printf("Warning: failed to save config: %v\n", saveErr)
-	}
-
-	if hasErrors {
-		return cfg, fmt.Errorf("one or more installations failed")
-	}
-
-	return cfg, nil
+	return succeeded, hasErrors
 }
 
 // newAddCommand creates the add subcommand.

@@ -54,7 +54,6 @@ installed, selected in config, available, or blocked by runtime requirements.`,
 // runListFlow executes the core list logic: read config, fetch registry,
 // detect installed agents, and print a status table.
 func runListFlow(h *listHandler, cmd *cobra.Command, args []string) error {
-	// 1. Read config
 	cfgPath, err := h.configPath()
 	if err != nil {
 		return fmt.Errorf("determining config path: %w", err)
@@ -69,7 +68,6 @@ func runListFlow(h *listHandler, cmd *cobra.Command, args []string) error {
 		selected[id] = true
 	}
 
-	// 2. Fetch registry (or error)
 	catalog, err := h.fetchRegistry(context.Background(), h.registryURL)
 	if err != nil {
 		return fmt.Errorf("fetching registry: %w\nTry again when online or use a cached registry.", err)
@@ -80,15 +78,17 @@ func runListFlow(h *listHandler, cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// 3. Detect installed agents
 	installed := h.detectAll(catalog.Agents)
+	printAgentTable(cmd, h, catalog.Agents, installed, selected)
+	return nil
+}
 
-	// 4. Print table header
+// printAgentTable prints a formatted table of agents with installation status.
+func printAgentTable(cmd *cobra.Command, h *listHandler, agents []registry.Agent, installed map[string]bool, selected map[string]bool) {
 	cmd.Printf("%-16s %-18s %-11s %s\n", "Agent ID", "Name", "Installed", "Status")
 	cmd.Printf("%-16s %-18s %-11s %s\n", "--------", "----", "---------", "------")
 
-	// 5. Print each agent row
-	for _, agent := range catalog.Agents {
+	for _, agent := range agents {
 		isInst := installed[agent.ID]
 		installedMark := "❌"
 		status := "available"
@@ -105,6 +105,4 @@ func runListFlow(h *listHandler, cmd *cobra.Command, args []string) error {
 		cmd.Printf("%-16s %-18s %-11s %s\n",
 			agent.ID, agent.Name, installedMark, status)
 	}
-
-	return nil
 }
