@@ -21,7 +21,8 @@
       "package-name": "squad-ai",
       "changelog-path": "CHANGELOG.md",
       "release-type": "simple",
-      "component": ""
+      "component": "",
+      "tag-separator": ""
     }
   }
 }
