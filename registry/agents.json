@@ -60,7 +60,7 @@
       },
       "dependencies": [
         {
-          "runtime": "none"
+          "runtime": "node"
         }
       ],
       "checksum": {
