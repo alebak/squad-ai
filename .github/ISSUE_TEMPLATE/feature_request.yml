@@ -1,0 +1,70 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Squad AI
+labels: ["enhancement"]
+
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: Which area of Squad AI would this feature affect?
+      options:
+        - CLI (commands, flags)
+        - TUI (terminal UI)
+        - Registry (fetch, cache, parse)
+        - Installer (agent installation)
+        - Config (user configuration)
+        - Runtime (dependency detection)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Describe it clearly.
+      placeholder: |
+        I'm always frustrated when...
+        It's currently not possible to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like. Be as specific as possible.
+      placeholder: |
+        Example usage:
+          squad <command> <flags>
+
+        Expected behavior:
+          ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request here.
+    validations:
+      required: false
