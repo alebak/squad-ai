@@ -36,6 +36,7 @@ Use 'squad install --agents <ids>' for non-interactive installation.`,
 	cmd.AddCommand(newUpdateCommand())
 	cmd.AddCommand(newInfoCommand())
 	cmd.AddCommand(newResetCommand())
+	cmd.AddCommand(newSelfUpdateCommand())
 	return cmd
 }
 
