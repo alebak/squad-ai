@@ -55,7 +55,8 @@
       "install": {
         "method": "curl_bash",
         "url": "https://pi.dev/install.sh",
-        "command": "curl -fsSL https://pi.dev/install.sh | sh"
+        "command": "curl -fsSL https://pi.dev/install.sh | sh",
+        "non_interactive": true
       },
       "dependencies": [
         {

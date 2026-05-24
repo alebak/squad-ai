@@ -18,9 +18,10 @@ const (
 
 // InstallCmd describes how to install an agent.
 type InstallCmd struct {
-	Method  InstallMethod `json:"method"`
-	URL     string        `json:"url"`
-	Command string        `json:"command"`
+	Method         InstallMethod `json:"method"`
+	URL            string        `json:"url"`
+	Command        string        `json:"command"`
+	NonInteractive bool          `json:"non_interactive"`
 }
 
 // RuntimeDep describes a runtime dependency required by an agent.

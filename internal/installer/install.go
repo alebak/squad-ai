@@ -80,7 +80,11 @@ func InstallAgent(agent registry.Agent, progress ProgressFn) error {
 			return err
 		}
 	}
-	if err := runAndLog(agent.ID, agent.Install.Command, progress); err != nil {
+	command := agent.Install.Command
+	if agent.Install.NonInteractive {
+		command = "yes | " + command
+	}
+	if err := runAndLog(agent.ID, command, progress); err != nil {
 		return err
 	}
 	return nil
