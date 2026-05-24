@@ -1,0 +1,26 @@
+# Delta: `squad update` Command
+
+## ADDED Requirements
+
+### Requirement: Force Registry Update
+
+`squad update` SHALL force a remote registry re-fetch, save the result to the local cache, and print a confirmation message.
+
+#### Scenario: Successful update
+
+- GIVEN the registry is reachable
+- WHEN the user runs `squad update`
+- THEN the registry is fetched from remote
+- AND the result is saved to the local cache
+- AND the output contains a confirmation message
+
+### Requirement: Registry Fetch Failure
+
+If the remote registry cannot be fetched, `squad update` SHALL error with a message explaining the failure.
+
+#### Scenario: Update fails
+
+- GIVEN the registry is unreachable
+- WHEN the user runs `squad update`
+- THEN the command errors explaining the network failure
+- AND the existing cache is NOT modified
