@@ -10,10 +10,10 @@ import (
 // testAgents returns a standard set of agents for testing.
 func testAgents() []AgentItem {
 	return []AgentItem{
-		{ID: "claude-code", Name: "Claude Code", PreChecked: true, Blocked: false},
-		{ID: "opencode", Name: "OpenCode", PreChecked: true, Blocked: false},
-		{ID: "codex", Name: "Codex CLI", PreChecked: false, Blocked: true, BlockReason: "requires Node.js 22+"},
-		{ID: "aider", Name: "Aider", PreChecked: false, Blocked: false},
+		{ID: "claude-code", Name: "Claude Code", PreChecked: true, Blocked: false, IsInstalled: false},
+		{ID: "opencode", Name: "OpenCode", PreChecked: false, Blocked: false, IsInstalled: true},
+		{ID: "codex", Name: "Codex CLI", PreChecked: false, Blocked: true, BlockReason: "requires Node.js 22+", IsInstalled: false},
+		{ID: "aider", Name: "Aider", PreChecked: false, Blocked: false, IsInstalled: false},
 	}
 }
 
@@ -29,9 +29,11 @@ func TestModel_InitialState(t *testing.T) {
 
 	assert.Equal(t, 0, m.cursor, "cursor starts at 0")
 
-	// Compatible agents (PreChecked=true, Blocked=false) are checked
+	// Compatible agents (PreChecked=true, not Blocked, not IsInstalled) are checked
 	assert.True(t, m.checked[0], "claude-code should be checked")
-	assert.True(t, m.checked[1], "opencode should be checked")
+
+	// Installed agent is NOT checked despite PreChecked (caller sets PreChecked=false)
+	assert.False(t, m.checked[1], "opencode (installed) should NOT be checked")
 
 	// Blocked agent is NOT checked despite PreChecked=true
 	assert.False(t, m.checked[2], "codex should NOT be checked (blocked)")
@@ -127,7 +129,7 @@ func TestModel_EnterConfirms(t *testing.T) {
 	mFinal := mResult.(model)
 
 	assert.True(t, mFinal.isSubmitted)
-	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, mFinal.selectedIDs())
+	assert.ElementsMatch(t, []string{"claude-code"}, mFinal.selectedIDs())
 }
 
 func TestModel_EnterIncludesToggledOn(t *testing.T) {
@@ -147,14 +149,10 @@ func TestModel_EnterIncludesToggledOn(t *testing.T) {
 	toggled, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = toggled.(model)
 
-	// Now navigated to opencode — toggle it too, just for fun
-	assert.True(t, m.checked[1], "opencode should remain checked")
-
 	// Confirm
 	final, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	ids := final.(model).selectedIDs()
-
-	assert.ElementsMatch(t, []string{"opencode", "aider"}, ids)
+	assert.ElementsMatch(t, []string{"aider"}, ids)
 }
 
 func TestModel_CtrlCQuits(t *testing.T) {
@@ -197,6 +195,7 @@ func TestModel_ViewRenders(t *testing.T) {
 	assert.Contains(t, view, "Select Your AI Coding Agents")
 	assert.Contains(t, view, "Claude Code")
 	assert.Contains(t, view, "OpenCode")
+	assert.Contains(t, view, "✅")
 	assert.Contains(t, view, "Codex CLI")
 	assert.Contains(t, view, "Aider")
 	assert.Contains(t, view, "requires Node.js 22+")
@@ -212,17 +211,32 @@ func TestModel_NotReady(t *testing.T) {
 	assert.Contains(t, view, "Loading...")
 }
 
+func TestModel_InstalledAgentNoToggle(t *testing.T) {
+	m := newModel(testAgents())
+
+	// Navigate to opencode (index 1, installed)
+	for range 1 {
+		m = updateModel(m, "j")
+	}
+
+	assert.True(t, m.agents[1].IsInstalled)
+	assert.False(t, m.checked[1])
+
+	// Try to toggle — should be no-op
+	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	assert.False(t, toggled.(model).checked[1], "installed agent should remain unchecked")
+}
+
 func TestModel_ToggleAll(t *testing.T) {
 	m := newModel(testAgents())
 
 	// All compatible unchecked? toggleAll should check all.
 	m.checked[0] = false
-	m.checked[1] = false
 
 	m = updateModel(m, "a")
 	assert.True(t, m.checked[0], "claude-code should be checked")
-	assert.True(t, m.checked[1], "opencode should be checked")
 	assert.True(t, m.checked[3], "aider should be checked")
+	assert.False(t, m.checked[1], "opencode (installed) should remain unchecked")
 	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
 }
 
@@ -230,11 +244,11 @@ func TestModel_ToggleAllDeselect(t *testing.T) {
 	m := newModel(testAgents())
 	m.checked[3] = true // manually check aider too
 
-	// All compatible checked? toggleAll should uncheck all.
+	// All compatible checked? toggleAll should uncheck all (except installed/blocked).
 	m = updateModel(m, "a")
 	assert.False(t, m.checked[0], "claude-code should be unchecked")
-	assert.False(t, m.checked[1], "opencode should be unchecked")
 	assert.False(t, m.checked[3], "aider should be unchecked")
+	assert.False(t, m.checked[1], "opencode (installed) should remain unchecked")
 	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
 }
 

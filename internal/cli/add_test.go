@@ -146,7 +146,10 @@ func TestAddCommand_AllAgentsAlreadyHandled(t *testing.T) {
 
 	err := cmd.Execute()
 	require.NoError(t, err)
-	assert.Contains(t, buf.String(), "No new agents available")
+	// All agents are still listed even when installed
+	assert.Contains(t, buf.String(), "claude-code")
+	assert.Contains(t, buf.String(), "opencode")
+	assert.Contains(t, buf.String(), "codex")
 }
 
 func TestAddCommand_TUISuccessFlow(t *testing.T) {

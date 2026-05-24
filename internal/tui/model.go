@@ -23,6 +23,7 @@ type AgentItem struct {
 	PreChecked  bool   // pre-select checkbox — true for compatible agents
 	Blocked     bool   // disabled because a runtime dependency is missing
 	BlockReason string // human-readable reason, e.g. "requires Node.js 22+"
+	IsInstalled bool   // agent binary already exists in PATH
 }
 
 // ──── Styles ─────────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ func (m model) handleSpecialKey(msg tea.KeyMsg) (model, bool) {
 			m.cursor = 0
 		}
 	case tea.KeySpace:
-		if !m.agents[m.cursor].Blocked {
+		if !m.agents[m.cursor].Blocked && !m.agents[m.cursor].IsInstalled {
 			m.checked[m.cursor] = !m.checked[m.cursor]
 		}
 	case tea.KeyEnter:
@@ -213,8 +214,12 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 	if agent.Blocked {
 		blockedSuffix = fmt.Sprintf("  ⛔ %s", agent.BlockReason)
 	}
+	installedTag := ""
+	if agent.IsInstalled {
+		installedTag = "  ✅"
+	}
 
-	line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, agent.Name, blockedSuffix)
+	line := fmt.Sprintf("%s%s %s%s%s", cursor, checkbox, agent.Name, installedTag, blockedSuffix)
 	if agent.Blocked {
 		line = styleBlocked.Render(line)
 	}
@@ -222,17 +227,17 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 }
 
 // toggleAll flips all compatible agents: if any are unchecked, check all;
-// if all are checked, uncheck all. Blocked agents are never affected.
+// if all are checked, uncheck all. Blocked and installed agents are never affected.
 func (m *model) toggleAll() {
 	allChecked := true
 	for i, a := range m.agents {
-		if !a.Blocked && !m.checked[i] {
+		if !a.Blocked && !a.IsInstalled && !m.checked[i] {
 			allChecked = false
 			break
 		}
 	}
 	for i, a := range m.agents {
-		if a.Blocked {
+		if a.Blocked || a.IsInstalled {
 			continue
 		}
 		m.checked[i] = !allChecked

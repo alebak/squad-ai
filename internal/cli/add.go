@@ -123,8 +123,7 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 
 	agentItems := buildAgentItemsForAdd(h, catalog, selected)
 	if len(agentItems) == 0 {
-		cmd.Println("No new agents available. All compatible agents are already installed or selected.")
-		cmd.Println("Run 'squad list' to see the full registry.")
+		cmd.Println("No agents found in the registry.")
 		return cfg, nil
 	}
 
@@ -134,20 +133,15 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 	return runAddFlowInteractive(h, cmd, agentItems, catalog, cfg, cfgPath)
 }
 
-// buildAgentItemsForAdd filters the registry catalog to agents not already
-// installed or selected, checks runtime compatibility, and builds TUI items.
+// buildAgentItemsForAdd builds TUI AgentItems for ALL registry agents.
+// Each agent includes its installation status, runtime compatibility, and
+// whether it's already selected in the user config.
 func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, selected map[string]bool) []tui.AgentItem {
 	installed := h.detectAll(catalog.Agents)
 
 	var agentItems []tui.AgentItem
 	for _, agent := range catalog.Agents {
-		if installed[agent.ID] {
-			continue
-		}
-		if selected[agent.ID] {
-			continue
-		}
-
+		isInst := installed[agent.ID]
 		blocked := !h.isRuntimeMet(agent.Dependencies)
 		reason := ""
 		if blocked {
@@ -158,9 +152,10 @@ func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, selected ma
 			ID:          agent.ID,
 			Name:        agent.Name,
 			Description: agent.Description,
-			PreChecked:  !blocked,
+			PreChecked:  !blocked && !isInst && !selected[agent.ID],
 			Blocked:     blocked,
 			BlockReason: reason,
+			IsInstalled: isInst,
 		})
 	}
 	return agentItems
@@ -195,6 +190,12 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 	}
 
 	toInstall := findAgentsByIDs(catalog, selectedIDs)
+	toInstall = filterInstalled(h, toInstall)
+	if len(toInstall) == 0 {
+		cmd.Println("Selected agents are already installed.")
+		return cfg, nil
+	}
+
 	cmd.Println("Installing selected agents...")
 	results := h.installAll(toInstall, makeProgressFn(cmd, toInstall))
 
@@ -208,6 +209,18 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 		return cfg, fmt.Errorf("one or more installations failed")
 	}
 	return cfg, nil
+}
+
+// filterInstalled removes agents that are already installed from the slice.
+func filterInstalled(h *addHandler, agents []registry.Agent) []registry.Agent {
+	installed := h.detectAll(agents)
+	var filtered []registry.Agent
+	for _, a := range agents {
+		if !installed[a.ID] {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered
 }
 
 // findAgentsByIDs locates agents in the catalog matching the given IDs.
