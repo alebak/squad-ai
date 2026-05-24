@@ -16,12 +16,13 @@ const (
 	MethodCustom InstallMethod = "custom"
 )
 
-// InstallCmd describes how to install an agent.
+// InstallCmd describes how to install and optionally uninstall an agent.
 type InstallCmd struct {
 	Method         InstallMethod `json:"method"`
 	URL            string        `json:"url"`
 	Command        string        `json:"command"`
 	NonInteractive bool          `json:"non_interactive"`
+	UninstallCmd   string        `json:"uninstall,omitempty"`
 }
 
 // RuntimeDep describes a runtime dependency required by an agent.

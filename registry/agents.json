@@ -56,7 +56,8 @@
         "method": "curl_bash",
         "url": "https://pi.dev/install.sh",
         "command": "curl -fsSL https://pi.dev/install.sh | sh",
-        "non_interactive": true
+        "non_interactive": true,
+        "uninstall": "npm uninstall -g @earendil-works/pi-coding-agent"
       },
       "dependencies": [
         {
@@ -79,7 +80,8 @@
       "install": {
         "method": "npm_install",
         "url": "",
-        "command": "npm i -g @openai/codex"
+        "command": "npm i -g @openai/codex",
+        "uninstall": "npm uninstall -g @openai/codex"
       },
       "dependencies": [
         {
@@ -122,7 +124,8 @@
       "install": {
         "method": "npm_install",
         "url": "",
-        "command": "npm install -g @google/gemini-cli"
+        "command": "npm install -g @google/gemini-cli",
+        "uninstall": "npm uninstall -g @google/gemini-cli"
       },
       "dependencies": [
         {
