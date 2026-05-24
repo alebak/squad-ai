@@ -222,15 +222,15 @@ func InstallAll(agents []registry.Agent, progress ProgressFn) []error {
 }
 
 // wrapNonInteractive wraps a shell command so that it does not prompt for
-// user input. For commands containing a pipe (curl | sh), it wraps the
-// last stage with yes so the prompt receives "y\n". For single commands
-// (npm install), it prefixes with yes |.
+// user input. For curl_bash pipelines, it downloads the script first and
+// runs it with yes piped to stdin. For single commands, it prefixes with yes.
 func wrapNonInteractive(command string) string {
 	if strings.Contains(command, "|") {
 		lastPipe := strings.LastIndex(command, "|")
 		before := strings.TrimSpace(command[:lastPipe])
 		after := strings.TrimSpace(command[lastPipe+1:])
-		return before + " | { yes | " + after + "; }"
+		tmpFile := "/tmp/squad-install-" + after[:min(4, len(after))]
+		return before + " -o " + tmpFile + " && yes | " + after + " " + tmpFile
 	}
 	return "yes | " + command
 }
