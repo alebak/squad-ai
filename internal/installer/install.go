@@ -82,7 +82,7 @@ func InstallAgent(agent registry.Agent, progress ProgressFn) error {
 	}
 	command := agent.Install.Command
 	if agent.Install.NonInteractive {
-		command = "yes | " + command
+		command = wrapNonInteractive(command)
 	}
 	if err := runAndLog(agent.ID, command, progress); err != nil {
 		return err
@@ -219,6 +219,20 @@ func InstallAll(agents []registry.Agent, progress ProgressFn) []error {
 		// results[i] stays nil on success
 	}
 	return results
+}
+
+// wrapNonInteractive wraps a shell command so that it does not prompt for
+// user input. For commands containing a pipe (curl | sh), it wraps the
+// last stage with yes so the prompt receives "y\n". For single commands
+// (npm install), it prefixes with yes |.
+func wrapNonInteractive(command string) string {
+	if strings.Contains(command, "|") {
+		lastPipe := strings.LastIndex(command, "|")
+		before := strings.TrimSpace(command[:lastPipe])
+		after := strings.TrimSpace(command[lastPipe+1:])
+		return before + " | { yes | " + after + "; }"
+	}
+	return "yes | " + command
 }
 
 
