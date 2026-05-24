@@ -7,7 +7,7 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version number of Squad AI",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Printf("%s version %s\n", cmd.Root().Name(), cmd.Root().Version)
+			cmd.Printf("Squad AI version %s\n", cmd.Root().Version)
 		},
 	}
 }

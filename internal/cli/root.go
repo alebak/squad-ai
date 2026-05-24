@@ -9,6 +9,7 @@ func NewRootCommand() *cobra.Command {
 		Short:   "Squad AI manages AI coding agents inside dev containers",
 		Version: "0.1.0",
 	}
+	cmd.SetVersionTemplate("Squad AI version {{.Version}}\n")
 	cmd.AddCommand(newVersionCommand())
 	return cmd
 }

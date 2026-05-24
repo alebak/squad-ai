@@ -26,7 +26,7 @@ func TestVersionCommand_Output(t *testing.T) {
 
 			err := cmd.Execute()
 			require.NoError(t, err)
-			assert.Contains(t, buf.String(), "squad version 0.1.0")
+			assert.Contains(t, buf.String(), "Squad AI version 0.1.0")
 		})
 	}
 }
