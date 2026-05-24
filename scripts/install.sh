@@ -53,32 +53,35 @@ get_latest_version() {
     echo "${tag#v}"
 }
 
+# Temp directory is global so the EXIT trap can clean it up.
+TMPDIR=""
+trap 'rm -rf "$TMPDIR"' EXIT
+
 main() {
     echo -e "\n${CYAN}${BOLD}Squad AI — Installer${NC}\n"
 
-    local platform version archive install_dir tmpdir
+    local platform version archive install_dir
     platform="$(detect_platform)"
     version="$(get_latest_version)"
     archive="squad-ai_${version}_${platform%/*}_${platform#*/}.tar.gz"
     install_dir="${HOME}/.local/bin"
-    tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    TMPDIR="$(mktemp -d)"
 
     success "Platform: ${platform}"
     success "Version: ${version}"
 
     echo -e "\nDownloading ${archive}..."
-    if ! curl -sfL -o "${tmpdir}/${archive}" \
+    if ! curl -sfL -o "${TMPDIR}/${archive}" \
         "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${archive}"; then
         error "Failed to download ${archive}"
         exit 1
     fi
 
     echo "Extracting..."
-    tar -xzf "${tmpdir}/${archive}" -C "$tmpdir"
+    tar -xzf "${TMPDIR}/${archive}" -C "$TMPDIR"
 
     mkdir -p "$install_dir"
-    cp "${tmpdir}/squad" "${install_dir}/squad"
+    cp "${TMPDIR}/squad" "${install_dir}/squad"
     chmod +x "${install_dir}/squad"
 
     if [[ ":$PATH:" != *":${install_dir}:"* ]]; then
