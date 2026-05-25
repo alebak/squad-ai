@@ -38,6 +38,12 @@ func TestAddCommand_NoTTYShowsAgentList(t *testing.T) {
 			// All runtimes met
 			return true
 		},
+		uninstallAgent: func(agent registry.Agent) error {
+			return nil
+		},
+		confirmFn: func(msg string) bool {
+			return false
+		},
 		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
 		isTerminal: func() bool { return false },
 	}
@@ -66,12 +72,14 @@ func TestAddCommand_EmptyRegistry(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return &registry.Catalog{Agents: []registry.Agent{}}, nil
 		},
-		detectAll:    func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
-		installAll:   func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
-		runSelection: func(items []tui.AgentItem) ([]string, error) { return nil, nil },
-		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
-		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal:   func() bool { return false },
+		detectAll:      func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
+		installAll:     func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
+		runSelection:   func(items []tui.AgentItem) ([]string, error) { return nil, nil },
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return false },
 	}
 
 	cmd := newAddCommandWithHandler(h)
@@ -92,12 +100,14 @@ func TestAddCommand_RegistryFetchFailure(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return nil, errors.New("connection refused")
 		},
-		detectAll:    func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
-		installAll:   func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
-		runSelection: func(items []tui.AgentItem) ([]string, error) { return nil, nil },
-		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
-		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal:   func() bool { return false },
+		detectAll:      func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
+		installAll:     func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
+		runSelection:   func(items []tui.AgentItem) ([]string, error) { return nil, nil },
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return false },
 	}
 
 	cmd := newAddCommandWithHandler(h)
@@ -135,9 +145,11 @@ func TestAddCommand_AllAgentsAlreadyHandled(t *testing.T) {
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
 			return nil, nil
 		},
-		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
-		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal:   func() bool { return false },
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return false },
 	}
 
 	cmd := newAddCommandWithHandler(h)
@@ -180,9 +192,11 @@ func TestAddCommand_TUISuccessFlow(t *testing.T) {
 			// Simulate selecting both compatible agents
 			return []string{"claude-code", "opencode"}, nil
 		},
-		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
-		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal:   func() bool { return true },
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return true },
 	}
 
 	cmd := newAddCommandWithHandler(h)
@@ -219,9 +233,11 @@ func TestAddCommand_TUIEmptySelection(t *testing.T) {
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
 			return nil, nil // user cancelled
 		},
-		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
-		configPath:   func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal:   func() bool { return true },
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return true },
 	}
 
 	cmd := newAddCommandWithHandler(h)
@@ -231,6 +247,158 @@ func TestAddCommand_TUIEmptySelection(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "No agents selected")
+}
+
+func TestAddCommand_UninstallPromptCancel(t *testing.T) {
+	buf := new(bytes.Buffer)
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		// Claude-code is installed but user didn't select it
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": true}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return nil
+		},
+		runSelection: func(items []tui.AgentItem) ([]string, error) {
+			// User selected opencode, NOT claude-code (which is installed)
+			return []string{"opencode"}, nil
+		},
+		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error {
+			return nil
+		},
+		uninstallConfig: func(agent registry.Agent) error {
+			return nil
+		},
+		uninstallChoiceFn: func(agentName string) uninstallChoice {
+			// User cancels — keep agent installed
+			return uninstallCancel
+		},
+		confirmFn:  func(msg string) bool { return false },
+		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal: func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Keeping Claude Code installed")
+	// Agent should not be uninstalled (no uninstall message)
+	assert.NotContains(t, output, "Uninstalled")
+}
+
+func TestAddCommand_UninstallAppOnly(t *testing.T) {
+	buf := new(bytes.Buffer)
+	var uninstalledAgent string
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": true}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return nil
+		},
+		runSelection: func(items []tui.AgentItem) ([]string, error) {
+			return []string{"opencode"}, nil
+		},
+		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error {
+			uninstalledAgent = agent.ID
+			return nil
+		},
+		uninstallConfig: func(agent registry.Agent) error {
+			t.Error("uninstallConfig should NOT be called for app-only")
+			return nil
+		},
+		uninstallChoiceFn: func(agentName string) uninstallChoice {
+			return uninstallAppOnly
+		},
+		confirmFn:  func(msg string) bool { return false },
+		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal: func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Equal(t, "claude-code", uninstalledAgent)
+	assert.Contains(t, buf.String(), "Uninstalled Claude Code")
+}
+
+func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
+	buf := new(bytes.Buffer)
+	var uninstalledAgent string
+	var configCleanedAgent string
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": true}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return nil
+		},
+		runSelection: func(items []tui.AgentItem) ([]string, error) {
+			return []string{"opencode"}, nil
+		},
+		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error {
+			uninstalledAgent = agent.ID
+			return nil
+		},
+		uninstallConfig: func(agent registry.Agent) error {
+			configCleanedAgent = agent.ID
+			return nil
+		},
+		uninstallChoiceFn: func(agentName string) uninstallChoice {
+			return uninstallAppConfig
+		},
+		confirmFn:  func(msg string) bool { return false },
+		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal: func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Equal(t, "claude-code", uninstalledAgent)
+	assert.Equal(t, "claude-code", configCleanedAgent)
+	assert.Contains(t, buf.String(), "Uninstalled Claude Code (app)")
+	assert.Contains(t, buf.String(), "Cleaned config for Claude Code")
 }
 
 func TestAddCommand_BlockedAgentsShownInTTYFallback(t *testing.T) {
@@ -262,8 +430,10 @@ func TestAddCommand_BlockedAgentsShownInTTYFallback(t *testing.T) {
 			}
 			return true
 		},
-		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
-		isTerminal: func() bool { return false },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		confirmFn:      func(msg string) bool { return false },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return false },
 	}
 
 	cmd := newAddCommandWithHandler(h)

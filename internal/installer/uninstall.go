@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -86,6 +87,70 @@ func uninstallCurlBashFallback(agent registry.Agent) error {
 	}
 
 	return nil
+}
+
+// UninstallConfig removes config/data directories for the given agent.
+//
+// For each path in agent.ConfigPaths:
+//  1. Expand "~" to the user's home directory.
+//  2. Resolve the path to an absolute path.
+//  3. Verify the resolved path is within the user's home directory.
+//  4. Call os.RemoveAll on the resolved path.
+//
+// Non-existent paths are skipped silently. Returns nil on success or if
+// ConfigPaths is nil/empty. Returns an error if any path escapes the home
+// directory or if os.RemoveAll fails.
+func UninstallConfig(agent registry.Agent) error {
+	if len(agent.ConfigPaths) == 0 {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("uninstalling config for %s: cannot determine home dir: %w", agent.ID, err)
+	}
+
+	var firstErr error
+	for _, p := range agent.ConfigPaths {
+		resolved := p
+
+		// Expand "~" to home directory.
+		if strings.HasPrefix(resolved, "~") {
+			resolved = filepath.Join(home, resolved[1:])
+		}
+
+		// Resolve to absolute path (handles ".." and relative paths).
+		absPath, err := filepath.Abs(resolved)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("uninstalling config for %s: resolving path %q: %w", agent.ID, p, err)
+			}
+			continue
+		}
+
+		// Security check: for paths that started with "~", verify the
+		// resolved path stays within the home directory (prevents "~/.."
+		// traversal).
+		if strings.HasPrefix(p, "~") && !strings.HasPrefix(absPath, home) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("uninstalling config for %s: path %q resolves outside home directory", agent.ID, p)
+			}
+			continue
+		}
+
+		// Skip non-existent paths.
+		if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
+			continue
+		}
+
+		if err := os.RemoveAll(absPath); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("uninstalling config for %s: removing %s: %w", agent.ID, absPath, err)
+			}
+		}
+	}
+
+	return firstErr
 }
 
 // ExtractNPMPackage extracts the npm package name from an install command.

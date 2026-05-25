@@ -8,19 +8,20 @@ Defines the agent registry model, file format, remote fetch, and local cache. Th
 
 ### Requirement: Agent Type
 
-The Agent, InstallCmd, RuntimeDep, and Checksum types SHALL round-trip through JSON. Fields: `id`, `name`, `description`, `version`, `detect_command`, `install` (method, url, command), `dependencies` (runtime, optional min_version), `checksum` (sha256, verified_at), `tags`, `added_at`. Optional fields (`checksum`, `min_version`) SHALL use `omitempty`.
+The Agent, InstallCmd, RuntimeDep, Checksum types, and the ConfigPaths field SHALL round-trip through JSON. Fields: `id`, `name`, `description`, `version`, `detect_command`, `install` (method, url, command), `config_paths` (optional string array), `dependencies` (runtime, optional min_version), `checksum` (sha256, verified_at), `tags`, `added_at`. Optional fields (`checksum`, `config_paths`, `min_version`) SHALL use `omitempty`.
+(Previously: no `config_paths` field existed)
 
 #### Scenario: Round-trip serialization
 
 - GIVEN an Agent with all fields populated
 - WHEN marshaled to JSON and unmarshaled back
-- THEN all fields match including nested InstallCmd, RuntimeDep, and Checksum
+- THEN all fields match including nested InstallCmd, RuntimeDep, Checksum, and ConfigPaths
 
 #### Scenario: Optional fields omitted
 
-- GIVEN an Agent with nil Checksum and Dependencies containing only runtime without min_version
+- GIVEN an Agent with nil Checksum, nil ConfigPaths, and Dependencies containing only runtime without min_version
 - WHEN marshaled to JSON
-- THEN `checksum` and `min_version` fields are absent from output
+- THEN `checksum`, `config_paths`, and `min_version` fields are absent from output
 
 ### Requirement: Registry File
 

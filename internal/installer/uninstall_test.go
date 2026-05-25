@@ -234,6 +234,108 @@ func TestUninstallAgent_NpmFallbackNoPackage(t *testing.T) {
 	assert.Contains(t, err.Error(), "could not extract npm package name")
 }
 
+// TestUninstallConfig_RemoveDir creates a temp dir, verifies UninstallConfig
+// removes it.
+func TestUninstallConfig_RemoveDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a subdirectory to remove.
+	targetDir := filepath.Join(tmpDir, "test-agent")
+	err := os.MkdirAll(targetDir, 0755)
+	require.NoError(t, err)
+
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: []string{targetDir},
+	}
+
+	err = UninstallConfig(agent)
+	assert.NoError(t, err)
+
+	_, err = os.Stat(targetDir)
+	assert.True(t, os.IsNotExist(err), "directory should be removed")
+}
+
+// TestUninstallConfig_SkipNonExistent verifies that non-existent paths
+// are skipped without error.
+func TestUninstallConfig_SkipNonExistent(t *testing.T) {
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: []string{"/tmp/nonexistent-uninstall-test-abc123"},
+	}
+
+	err := UninstallConfig(agent)
+	assert.NoError(t, err, "non-existent path should be skipped")
+}
+
+// TestUninstallConfig_EmptyConfigPaths verifies that nil or empty
+// ConfigPaths is a no-op.
+func TestUninstallConfig_EmptyConfigPaths(t *testing.T) {
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: nil,
+	}
+
+	err := UninstallConfig(agent)
+	assert.NoError(t, err, "nil ConfigPaths should be no-op")
+
+	agent.ConfigPaths = []string{}
+	err = UninstallConfig(agent)
+	assert.NoError(t, err, "empty ConfigPaths should be no-op")
+}
+
+// TestUninstallConfig_PathTraversal verifies that ~/.. paths escaping the
+// home directory are rejected.
+func TestUninstallConfig_PathTraversal(t *testing.T) {
+	// "~/.." expands to home + "/.." which is the parent of home.
+	// "~/../etc" would resolve to parent(home) + "/etc", outside home.
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: []string{"~/../etc"},
+	}
+
+	err := UninstallConfig(agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outside home directory")
+}
+
+// TestUninstallConfig_TildeExpansion verifies that "~" is expanded to home.
+func TestUninstallConfig_TildeExpansion(t *testing.T) {
+	// Use a path that likely doesn't exist, so the test passes
+	// regardless of whether the user has this directory.
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: []string{"~/.squad-ai-uninstall-test-xyz"},
+	}
+
+	err := UninstallConfig(agent)
+	assert.NoError(t, err, "tilde expansion should not error on non-existent path")
+}
+
+// TestUninstallConfig_MultiplePaths continues on first error.
+func TestUninstallConfig_MultiplePaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	targetDir := filepath.Join(tmpDir, "test-agent")
+	err := os.MkdirAll(targetDir, 0755)
+	require.NoError(t, err)
+
+	agent := registry.Agent{
+		ID: "test-agent",
+		ConfigPaths: []string{
+			"~/../etc", // should fail (outside home)
+			targetDir,  // should succeed (valid path)
+		},
+	}
+
+	err = UninstallConfig(agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outside home directory")
+
+	// The second path should still be removed (we continue on error).
+	_, statErr := os.Stat(targetDir)
+	assert.True(t, os.IsNotExist(statErr), "valid path should still be removed even after error on previous path")
+}
+
 // TestUninstallAgent_UnknownMethod verifies that an unknown install method
 // returns an error.
 func TestUninstallAgent_UnknownMethod(t *testing.T) {

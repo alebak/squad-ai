@@ -8,19 +8,27 @@ import (
 )
 
 // testAgents returns a standard set of agents for testing.
+// The first agent is always the select-all sentinel.
 func testAgents() []AgentItem {
 	return []AgentItem{
-		{ID: "claude-code", Name: "Claude Code", PreChecked: true, Blocked: false, IsInstalled: false},
-		{ID: "opencode", Name: "OpenCode", PreChecked: false, Blocked: false, IsInstalled: true},
-		{ID: "codex", Name: "Codex CLI", PreChecked: false, Blocked: true, BlockReason: "requires Node.js 22+", IsInstalled: false},
-		{ID: "aider", Name: "Aider", PreChecked: false, Blocked: false, IsInstalled: false},
+		{Name: "select all", IsSelectAll: true},
+		{ID: "claude-code", Name: "Claude Code", Blocked: false},
+		{ID: "opencode", Name: "OpenCode", Blocked: false},
+		{ID: "codex", Name: "Codex CLI", Blocked: true, BlockReason: "requires Node.js 22+"},
+		{ID: "aider", Name: "Aider", Blocked: false},
 	}
 }
 
 // updateModel sends a rune key to the model and returns the updated model.
-// Use typ key (j/k/q/space) — sent as KeyRunes.
+// Use type key (j/k/q) — sent as KeyRunes.
 func updateModel(m model, key string) model {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	return updated.(model)
+}
+
+// updateModelKey sends a tea.KeyMsg with the given type and returns the updated model.
+func updateModelKey(m model, keyType tea.KeyType) model {
+	updated, _ := m.Update(tea.KeyMsg{Type: keyType})
 	return updated.(model)
 }
 
@@ -28,18 +36,15 @@ func TestModel_InitialState(t *testing.T) {
 	m := newModel(testAgents())
 
 	assert.Equal(t, 0, m.cursor, "cursor starts at 0")
+	assert.True(t, m.agents[0].IsSelectAll, "first agent is select-all sentinel")
 
-	// Compatible agents (PreChecked=true, not Blocked, not IsInstalled) are checked
-	assert.True(t, m.checked[0], "claude-code should be checked")
-
-	// Installed agent is NOT checked despite PreChecked (caller sets PreChecked=false)
-	assert.False(t, m.checked[1], "opencode (installed) should NOT be checked")
-
-	// Blocked agent is NOT checked despite PreChecked=true
-	assert.False(t, m.checked[2], "codex should NOT be checked (blocked)")
-
-	// Agent with PreChecked=false is not checked
-	assert.False(t, m.checked[3], "aider should NOT be checked initially")
+	// All agents start unchecked
+	for i, a := range m.agents {
+		if a.IsSelectAll {
+			continue
+		}
+		assert.False(t, m.checked[i], "agent %d should start unchecked", i)
+	}
 
 	assert.False(t, m.isSubmitted)
 }
@@ -47,8 +52,9 @@ func TestModel_InitialState(t *testing.T) {
 func TestModel_CursorDown(t *testing.T) {
 	m := newModel(testAgents())
 
+	assert.Equal(t, 0, m.cursor, "starts at select-all row")
 	m = updateModel(m, "j")
-	assert.Equal(t, 1, m.cursor)
+	assert.Equal(t, 1, m.cursor, "moves to first agent")
 
 	m = updateModel(m, "j")
 	assert.Equal(t, 2, m.cursor)
@@ -60,12 +66,13 @@ func TestModel_CursorDownWraps(t *testing.T) {
 	for range m.agents {
 		m = updateModel(m, "j")
 	}
-	assert.Equal(t, 0, m.cursor)
+	assert.Equal(t, 0, m.cursor, "wraps to select-all row")
 }
 
 func TestModel_CursorUp(t *testing.T) {
 	m := newModel(testAgents())
 
+	// Up from select-all row wraps to last
 	m = updateModel(m, "k")
 	assert.Equal(t, len(m.agents)-1, m.cursor)
 
@@ -76,7 +83,7 @@ func TestModel_CursorUp(t *testing.T) {
 func TestModel_CursorArrows(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Up arrow works
+	// Up arrow wraps to last
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	assert.Equal(t, len(m.agents)-1, updated.(model).cursor)
 
@@ -87,69 +94,77 @@ func TestModel_CursorArrows(t *testing.T) {
 
 func TestModel_ToggleCheck(t *testing.T) {
 	m := newModel(testAgents())
-	assert.False(t, m.checked[3], "aider starts unchecked")
+	assert.False(t, m.checked[4], "aider starts unchecked")
 
-	// Navigate to aider (index 3)
-	for range 3 {
+	// Navigate to aider (index 4 — index 0 is select-all)
+	for range 4 {
 		m = updateModel(m, "j")
 	}
-	assert.Equal(t, 3, m.cursor)
+	assert.Equal(t, 4, m.cursor)
 
-	// Toggle with space (real KeyMsg Type)
-	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	m = toggled.(model)
-	assert.True(t, m.checked[3], "aider should now be checked")
+	// Toggle with space
+	m = updateModelKey(m, tea.KeySpace)
+	assert.True(t, m.checked[4], "aider should now be checked")
 
 	// Toggle again → off
-	toggled, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	m = toggled.(model)
-	assert.False(t, m.checked[3], "aider should now be unchecked")
+	m = updateModelKey(m, tea.KeySpace)
+	assert.False(t, m.checked[4], "aider should now be unchecked")
 }
 
 func TestModel_BlockedAgentNoToggle(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Navigate to codex (index 2, blocked)
-	for range 2 {
+	// Navigate to codex (index 3, blocked — index 0 is select-all)
+	for range 3 {
 		m = updateModel(m, "j")
 	}
 
-	assert.True(t, m.agents[2].Blocked)
-	assert.False(t, m.checked[2])
+	assert.True(t, m.agents[3].Blocked)
+	assert.False(t, m.checked[3])
 
 	// Try to toggle — should be no-op
-	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	assert.False(t, toggled.(model).checked[2], "blocked agent should remain unchecked")
+	m = updateModelKey(m, tea.KeySpace)
+	assert.False(t, m.checked[3], "blocked agent should remain unchecked")
 }
 
 func TestModel_EnterConfirms(t *testing.T) {
 	m := newModel(testAgents())
 
+	// Check aider
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j") // now at index 4 (aider)
+	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = toggled.(model)
+
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mFinal := mResult.(model)
 
 	assert.True(t, mFinal.isSubmitted)
-	assert.ElementsMatch(t, []string{"claude-code"}, mFinal.selectedIDs())
+	assert.ElementsMatch(t, []string{"aider"}, mFinal.selectedIDs())
 }
 
 func TestModel_EnterIncludesToggledOn(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Navigate to aider (index 3) and toggle it on
-	for range 3 {
-		m = updateModel(m, "j")
-	}
-	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	m = toggled.(model)
+	// Toggle on claude-code (index 1)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
 
-	// Navigate back to claude-code (index 0) and toggle it off
-	for range 3 {
-		m = updateModel(m, "k")
-	}
-	toggled, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	m = toggled.(model)
+	// Toggle on aider (index 4)
+	m = updateModel(m, "j") // index 2
+	m = updateModel(m, "j") // index 3
+	m = updateModel(m, "j") // index 4
+	m = updateModelKey(m, tea.KeySpace)
 
-	// Confirm
+	// Uncheck claude-code (go back to index 1)
+	m = updateModel(m, "k") // index 3
+	m = updateModel(m, "k") // index 2
+	m = updateModel(m, "k") // index 1
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Confirm — only aider should remain
 	final, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	ids := final.(model).selectedIDs()
 	assert.ElementsMatch(t, []string{"aider"}, ids)
@@ -193,12 +208,14 @@ func TestModel_ViewRenders(t *testing.T) {
 
 	view := m.View()
 	assert.Contains(t, view, "Select Your AI Coding Agents")
+	assert.Contains(t, view, "select all")
 	assert.Contains(t, view, "Claude Code")
 	assert.Contains(t, view, "OpenCode")
-	assert.Contains(t, view, "✅")
-	assert.Contains(t, view, "Codex CLI")
+	assert.Contains(t, view, "Codex CLI (requires Node.js 22+)")
 	assert.Contains(t, view, "Aider")
-	assert.Contains(t, view, "requires Node.js 22+")
+	assert.NotContains(t, view, "✅", "no installed emoji")
+	assert.NotContains(t, view, "⛔", "no blocked emoji")
+	assert.NotContains(t, view, "a select all", "help bar does not mention a key")
 	assert.Contains(t, view, "navigate")
 	assert.Contains(t, view, "toggle")
 }
@@ -211,51 +228,112 @@ func TestModel_NotReady(t *testing.T) {
 	assert.Contains(t, view, "Loading...")
 }
 
-func TestModel_InstalledAgentNoToggle(t *testing.T) {
+func TestModel_InstalledAgentToggleable(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Navigate to opencode (index 1, installed)
-	for range 1 {
+	// Navigate to opencode (index 2)
+	for range 2 {
 		m = updateModel(m, "j")
 	}
+	assert.Equal(t, 2, m.cursor)
+	assert.Equal(t, "OpenCode", m.agents[2].Name)
+	assert.False(t, m.checked[2], "starts unchecked")
 
-	assert.True(t, m.agents[1].IsInstalled)
-	assert.False(t, m.checked[1])
+	// Toggle on — should work
+	m = updateModelKey(m, tea.KeySpace)
+	assert.True(t, m.checked[2], "should toggle on")
 
-	// Try to toggle — should be no-op
-	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	assert.False(t, toggled.(model).checked[1], "installed agent should remain unchecked")
+	// Toggle off — should work
+	m = updateModelKey(m, tea.KeySpace)
+	assert.False(t, m.checked[2], "should toggle off")
 }
 
 func TestModel_ToggleAll(t *testing.T) {
 	m := newModel(testAgents())
 
-	// All compatible unchecked? toggleAll should check all.
-	m.checked[0] = false
-
+	// toggleAll should check all compatible (non-blocked, non-select-all).
 	m = updateModel(m, "a")
-	assert.True(t, m.checked[0], "claude-code should be checked")
-	assert.True(t, m.checked[3], "aider should be checked")
-	assert.False(t, m.checked[1], "opencode (installed) should remain unchecked")
-	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
+	assert.True(t, m.checked[1], "claude-code should be checked")
+	assert.True(t, m.checked[2], "opencode should be checked")
+	assert.True(t, m.checked[4], "aider should be checked")
+	assert.False(t, m.checked[3], "codex (blocked) should remain unchecked")
+	assert.False(t, m.checked[0], "select-all sentinel should stay unchecked")
 }
 
 func TestModel_ToggleAllDeselect(t *testing.T) {
 	m := newModel(testAgents())
-	m.checked[3] = true // manually check aider too
 
-	// All compatible checked? toggleAll should uncheck all (except installed/blocked).
+	// First check all
 	m = updateModel(m, "a")
-	assert.False(t, m.checked[0], "claude-code should be unchecked")
-	assert.False(t, m.checked[3], "aider should be unchecked")
-	assert.False(t, m.checked[1], "opencode (installed) should remain unchecked")
-	assert.False(t, m.checked[2], "codex (blocked) should remain unchecked")
+	assert.True(t, m.checked[1], "claude-code should be checked")
+	assert.True(t, m.checked[2], "opencode should be checked")
+
+	// toggleAll again should uncheck all compatible
+	m = updateModel(m, "a")
+	assert.False(t, m.checked[1], "claude-code should be unchecked")
+	assert.False(t, m.checked[2], "opencode should be unchecked")
+	assert.False(t, m.checked[4], "aider should be unchecked")
+	assert.False(t, m.checked[3], "codex (blocked) should remain unchecked")
 }
 
-func TestModel_HelpIncludesToggleAll(t *testing.T) {
+func TestModel_SelectAllRowToggle(t *testing.T) {
+	m := newModel(testAgents())
+
+	// Space on select-all row should toggle all compatible
+	m = updateModelKey(m, tea.KeySpace)
+	assert.True(t, m.checked[1], "claude-code should be checked")
+	assert.True(t, m.checked[2], "opencode should be checked")
+	assert.True(t, m.checked[4], "aider should be checked")
+	assert.False(t, m.checked[3], "codex (blocked) should remain unchecked")
+	assert.False(t, m.checked[0], "select-all stays unchecked")
+
+	// Space again on select-all row should uncheck all
+	m = updateModelKey(m, tea.KeySpace)
+	assert.False(t, m.checked[1], "claude-code should be unchecked")
+	assert.False(t, m.checked[2], "opencode should be unchecked")
+	assert.False(t, m.checked[4], "aider should be unchecked")
+	assert.False(t, m.checked[3], "codex (blocked) should remain unchecked")
+}
+
+func TestModel_SelectAllDynamicLabel(t *testing.T) {
+	m := newModel(testAgents())
+	m.isReady = true
+
+	// Initially unchecked: should show "select all"
+	view := m.View()
+	assert.Contains(t, view, "[ ] select all")
+
+	// Check one agent — label should still be "select all" (not ALL checked)
+	m = updateModelKey(m, tea.KeyDown) // move to claude-code (index 1)
+	m = updateModelKey(m, tea.KeySpace)
+	m.isReady = true
+
+	view2 := m.View()
+	assert.Contains(t, view2, "[ ] select all", "still select all — not all checked")
+
+	// Check all compatible agents
+	m = updateModel(m, "a")
+	m.isReady = true
+
+	view3 := m.View()
+	assert.Contains(t, view3, "[x] unselect all", "all checked → unselect all")
+}
+
+func TestModel_BlockedAgentNoEmoji(t *testing.T) {
 	m := newModel(testAgents())
 	m.isReady = true
 
 	view := m.View()
-	assert.Contains(t, view, "a select all")
+	assert.NotContains(t, view, "⛔", "no blocked emoji in view")
+	assert.Contains(t, view, "Codex CLI (requires Node.js 22+)", "block reason as parenthetical")
+}
+
+func TestModel_NoEmojiInView(t *testing.T) {
+	m := newModel(testAgents())
+	m.isReady = true
+
+	view := m.View()
+	assert.NotContains(t, view, "🤖", "no title emoji")
+	assert.NotContains(t, view, "✅", "no installed emoji")
+	assert.NotContains(t, view, "⛔", "no blocked emoji")
 }

@@ -45,6 +45,7 @@ type Agent struct {
 	Version      string       `json:"version"`
 	DetectCmd    string       `json:"detect_command"`
 	Install      InstallCmd   `json:"install"`
+	ConfigPaths  []string     `json:"config_paths,omitempty"`
 	Dependencies []RuntimeDep `json:"dependencies"`
 	Checksum     *Checksum    `json:"checksum,omitempty"`
 	Tags         []string     `json:"tags"`

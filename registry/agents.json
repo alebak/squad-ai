@@ -20,6 +20,7 @@
         "sha256": "b315b46925a9bfb9422f2503dd5aa649f680832f4c076b22d87c39d578c3d830",
         "verified_at": "2026-05-24"
       },
+      "config_paths": ["~/.claude"],
       "tags": ["anthropic", "claude"],
       "added_at": "2026-05-24"
     },
@@ -43,6 +44,7 @@
         "sha256": "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e",
         "verified_at": "2026-05-24"
       },
+      "config_paths": ["~/.config/opencode"],
       "tags": ["open-source", "opencode"],
       "added_at": "2026-05-24"
     },
@@ -68,6 +70,7 @@
         "sha256": "583e42efc398d7141bdd48e125c47deddea16b70d4ecfa8f8d5059b540f3cb01",
         "verified_at": "2026-05-24"
       },
+      "config_paths": ["~/.pi"],
       "tags": ["pi", "assistant"],
       "added_at": "2026-05-24"
     },
@@ -89,6 +92,7 @@
         }
       ],
       "checksum": null,
+      "config_paths": ["~/.codex"],
       "tags": ["openai", "codex"],
       "added_at": "2026-05-24"
     },
@@ -112,6 +116,7 @@
         "sha256": "ee1ea43ce4e9e56356c4ab6dad907ef357ae4bdfcaadb682735909fb57c9c640",
         "verified_at": "2026-05-24"
       },
+      "config_paths": ["~/.gemini/antigravity-cli"],
       "tags": ["google", "experimental"],
       "added_at": "2026-05-24"
     },
@@ -133,6 +138,7 @@
         }
       ],
       "checksum": null,
+      "config_paths": ["~/.gemini"],
       "tags": ["google", "gemini"],
       "added_at": "2026-05-24"
     },
@@ -156,6 +162,7 @@
         "sha256": "a645a956c2895c844510eb1d455ecdb84d9648da9a44785b22a2bd143f8156ec",
         "verified_at": "2026-05-24"
       },
+      "config_paths": ["~/.gentle-ai"],
       "tags": ["gentle-ai", "structured"],
       "added_at": "2026-05-24"
     }

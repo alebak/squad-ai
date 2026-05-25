@@ -14,16 +14,15 @@ import (
 // ──── AgentItem ──────────────────────────────────────────────────────────────
 
 // AgentItem is the display model for one agent in the TUI selection list.
-// The caller populates PreChecked, Blocked, and BlockReason based on runtime
-// detection before calling RunSelection.
+// Blocked agents show their BlockReason as "(reason)" appended to Name.
+// IsSelectAll marks the sentinel select-all row (always first element).
 type AgentItem struct {
 	ID          string
 	Name        string
 	Description string
-	PreChecked  bool   // pre-select checkbox — true for compatible agents
 	Blocked     bool   // disabled because a runtime dependency is missing
 	BlockReason string // human-readable reason, e.g. "requires Node.js 22+"
-	IsInstalled bool   // agent binary already exists in PATH
+	IsSelectAll bool   // true for the sentinel select-all row
 }
 
 // ──── Styles ─────────────────────────────────────────────────────────────────
@@ -67,23 +66,15 @@ type model struct {
 }
 
 // newModel creates a model from the given agent items.
-// PreChecked agents start checked; blocked agents start unchecked and cannot
-// be toggled.
+// All agents start unchecked. Blocked agents cannot be toggled.
 func newModel(agents []AgentItem) model {
-	checked := make(map[int]bool, len(agents))
-	for i, a := range agents {
-		if a.PreChecked && !a.Blocked {
-			checked[i] = true
-		}
-	}
-
 	s := spinner.New()
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
 	return model{
 		agents:  agents,
 		cursor:  0,
-		checked: checked,
+		checked: make(map[int]bool, len(agents)),
 		spinner: s,
 	}
 }
@@ -142,7 +133,9 @@ func (m model) handleSpecialKey(msg tea.KeyMsg) (model, bool) {
 			m.cursor = 0
 		}
 	case tea.KeySpace:
-		if !m.agents[m.cursor].Blocked && !m.agents[m.cursor].IsInstalled {
+		if m.agents[m.cursor].IsSelectAll {
+			m.toggleAll()
+		} else if !m.agents[m.cursor].Blocked {
 			m.checked[m.cursor] = !m.checked[m.cursor]
 		}
 	case tea.KeyEnter:
@@ -181,7 +174,7 @@ func (m model) View() string {
 
 	var b strings.Builder
 
-	b.WriteString(styleTitle.Render("🤖 Select Your AI Coding Agents"))
+	b.WriteString(styleTitle.Render("Select Your AI Coding Agents"))
 	b.WriteString("\n\n")
 
 	for i, agent := range m.agents {
@@ -191,7 +184,7 @@ func (m model) View() string {
 
 	b.WriteString("\n")
 	b.WriteString(styleHelp.Render(
-		"↑↓/jk navigate • space toggle • a select all • enter confirm • q quit",
+		"↑↓/jk navigate • space toggle • enter confirm • q quit",
 	))
 
 	return styleBorder.Render(b.String())
@@ -203,6 +196,10 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 		cursor = styleCursor.Render("▸ ")
 	}
 
+	if agent.IsSelectAll {
+		return m.renderSelectAllRow(cursor)
+	}
+
 	var checkbox string
 	if m.checked[i] {
 		checkbox = styleChecked.Render("◉")
@@ -210,34 +207,62 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 		checkbox = "○"
 	}
 
-	blockedSuffix := ""
-	if agent.Blocked {
-		blockedSuffix = fmt.Sprintf("  ⛔ %s", agent.BlockReason)
-	}
-	installedTag := ""
-	if agent.IsInstalled {
-		installedTag = "  ✅"
+	name := agent.Name
+	if agent.Blocked && agent.BlockReason != "" {
+		name = fmt.Sprintf("%s (%s)", agent.Name, agent.BlockReason)
 	}
 
-	line := fmt.Sprintf("%s%s %s%s%s", cursor, checkbox, agent.Name, installedTag, blockedSuffix)
+	line := fmt.Sprintf("%s%s %s", cursor, checkbox, name)
 	if agent.Blocked {
 		line = styleBlocked.Render(line)
 	}
 	return line
 }
 
+// renderSelectAllRow renders the sentinel select-all row.
+// Label is "select all" when any compatible agent is unchecked,
+// "unselect all" when all compatible agents are checked.
+func (m model) renderSelectAllRow(cursor string) string {
+	allChecked := true
+	for i, a := range m.agents {
+		if a.IsSelectAll || a.Blocked {
+			continue
+		}
+		if !m.checked[i] {
+			allChecked = false
+			break
+		}
+	}
+
+	var checkbox string
+	var label string
+	if allChecked {
+		checkbox = styleChecked.Render("[x]")
+		label = "unselect all"
+	} else {
+		checkbox = "[ ]"
+		label = "select all"
+	}
+
+	return fmt.Sprintf("%s%s %s", cursor, checkbox, label)
+}
+
 // toggleAll flips all compatible agents: if any are unchecked, check all;
-// if all are checked, uncheck all. Blocked and installed agents are never affected.
+// if all are checked, uncheck all. Blocked agents are never affected.
+// The select-all sentinel (index 0) is skipped since it's not a real agent.
 func (m *model) toggleAll() {
 	allChecked := true
 	for i, a := range m.agents {
-		if !a.Blocked && !a.IsInstalled && !m.checked[i] {
+		if a.IsSelectAll || a.Blocked {
+			continue
+		}
+		if !m.checked[i] {
 			allChecked = false
 			break
 		}
 	}
 	for i, a := range m.agents {
-		if a.Blocked || a.IsInstalled {
+		if a.IsSelectAll || a.Blocked {
 			continue
 		}
 		m.checked[i] = !allChecked
@@ -245,9 +270,13 @@ func (m *model) toggleAll() {
 }
 
 // selectedIDs returns the list of checked agent IDs.
+// The select-all sentinel is skipped since it has no real agent ID.
 func (m model) selectedIDs() []string {
 	var ids []string
 	for i, a := range m.agents {
+		if a.IsSelectAll {
+			continue
+		}
 		if m.checked[i] {
 			ids = append(ids, a.ID)
 		}
