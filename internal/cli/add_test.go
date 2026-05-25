@@ -252,6 +252,7 @@ func TestAddCommand_TUIEmptySelection(t *testing.T) {
 func TestAddCommand_UninstallPromptCancel(t *testing.T) {
 	buf := new(bytes.Buffer)
 
+	var runSelectionCallCount int
 	h := &addHandler{
 		registryURL: "",
 		loadConfig: func(path string) (*config.Config, error) {
@@ -260,26 +261,34 @@ func TestAddCommand_UninstallPromptCancel(t *testing.T) {
 		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
 			return testRegistry(), nil
 		},
-		// Claude-code is installed but user didn't select it
+		// Claude-code is installed but user deselected it on first TUI run
 		detectAll: func(agents []registry.Agent) map[string]bool {
 			return map[string]bool{"claude-code": true}
 		},
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
-			return nil
+			// Return nil errors matching the number of agents being installed.
+			errs := make([]error, len(agents))
+			return errs
 		},
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
-			// User selected opencode, NOT claude-code (which is installed)
-			return []string{"opencode"}, nil
+			runSelectionCallCount++
+			if runSelectionCallCount == 1 {
+				// First TUI launch: user deselected claude-code (installed)
+				return []string{"opencode"}, nil
+			}
+			// Second TUI launch after cancel: claude-code is pre-checked again
+			return []string{"opencode", "claude-code"}, nil
 		},
 		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
+			t.Error("uninstallAgent should NOT be called when user cancels")
 			return nil
 		},
 		uninstallConfig: func(agent registry.Agent) error {
+			t.Error("uninstallConfig should NOT be called when user cancels")
 			return nil
 		},
 		uninstallChoiceFn: func(agentName string) uninstallChoice {
-			// User cancels — keep agent installed
 			return uninstallCancel
 		},
 		confirmFn:  func(msg string) bool { return false },
@@ -295,9 +304,12 @@ func TestAddCommand_UninstallPromptCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	output := buf.String()
-	assert.Contains(t, output, "Keeping Claude Code installed")
-	// Agent should not be uninstalled (no uninstall message)
+	// Cancel should re-launch TUI rather than silently keeping the agent
+	assert.Equal(t, 2, runSelectionCallCount, "TUI should have been re-launched after cancel")
+	// No uninstall should have happened
 	assert.NotContains(t, output, "Uninstalled")
+	// After second TUI run, the flow proceeds to installation
+	assert.Contains(t, output, "Installing selected agents")
 }
 
 func TestAddCommand_UninstallAppOnly(t *testing.T) {
@@ -399,6 +411,106 @@ func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
 	assert.Equal(t, "claude-code", configCleanedAgent)
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code (app)")
 	assert.Contains(t, buf.String(), "Cleaned config for Claude Code")
+}
+
+func TestAddCommand_BulkUninstallConfirm(t *testing.T) {
+	buf := new(bytes.Buffer)
+	var uninstalledAgents []string
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		// Both claude-code and opencode are installed
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": true, "opencode": true}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return nil
+		},
+		runSelection: func(items []tui.AgentItem) ([]string, error) {
+			// User deselected both installed agents
+			return []string{}, nil
+		},
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error {
+			uninstalledAgents = append(uninstalledAgents, agent.ID)
+			return nil
+		},
+		confirmFn:  func(msg string) bool { return true },
+		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal: func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	// Both agents should be uninstalled
+	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, uninstalledAgents)
+	output := buf.String()
+	assert.Contains(t, output, "Uninstalled Claude Code")
+	assert.Contains(t, output, "Uninstalled OpenCode")
+}
+
+func TestAddCommand_BulkUninstallDecline(t *testing.T) {
+	buf := new(bytes.Buffer)
+	var runSelectionCallCount int
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		// Both claude-code and opencode are installed
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{"claude-code": true, "opencode": true}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			return nil
+		},
+		runSelection: func(items []tui.AgentItem) ([]string, error) {
+			runSelectionCallCount++
+			if runSelectionCallCount == 1 {
+				// First TUI: user deselected both installed agents
+				return []string{}, nil
+			}
+			// Second TUI after restart: user selected both (they were re-added)
+			return []string{"claude-code", "opencode"}, nil
+		},
+		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error {
+			t.Error("uninstallAgent should NOT be called when user declines bulk uninstall")
+			return nil
+		},
+		confirmFn:  func(msg string) bool { return false },
+		configPath: func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal: func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	// TUI should have been re-launched after decline
+	assert.Equal(t, 2, runSelectionCallCount, "TUI should have been re-launched after bulk decline")
+	// No uninstall should have happened
+	assert.NotContains(t, buf.String(), "Uninstalled")
+	// After second TUI run, the flow should note the agents are already installed
+	assert.Contains(t, buf.String(), "Selected agents are already installed")
 }
 
 func TestAddCommand_BlockedAgentsShownInTTYFallback(t *testing.T) {

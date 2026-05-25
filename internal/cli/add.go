@@ -230,24 +230,47 @@ func defaultUninstallChoiceFn(agentName string) uninstallChoice {
 // chosen agents, prompts to uninstall deselected installed agents,
 // and saves the updated config.
 // installed is pre-computed by runAddFlow to enable pre-checked rendering.
+// The TUI selection + uninstall prompt loop restarts when the user chooses
+// Cancel, re-launching the TUI with the latest installed state.
 func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, catalog *registry.Catalog, cfg *config.Config, cfgPath string, installed map[string]bool) (*config.Config, error) {
 
-	selectedIDs, err := h.runSelection(agentItems)
-	if err != nil {
-		return nil, fmt.Errorf("TUI selection failed: %w", err)
-	}
-	if len(selectedIDs) == 0 {
-		cmd.Println("No agents selected. Nothing to install.")
-		return cfg, nil
-	}
+	var selectedIDs []string
+	for {
+		var err error
+		selectedIDs, err = h.runSelection(agentItems)
+		if err != nil {
+			return nil, fmt.Errorf("TUI selection failed: %w", err)
+		}
 
-	// Prompt to uninstall installed agents that the user deselects.
-	selectedSet := make(map[string]bool, len(selectedIDs))
-	for _, id := range selectedIDs {
-		selectedSet[id] = true
-	}
-	for _, agent := range catalog.Agents {
-		if installed[agent.ID] && !selectedSet[agent.ID] {
+		// Collect deselected installed agents BEFORE the empty-check so that
+		// the "unselect all" case (selectedIDs is empty but installed agents
+		// were deselected) is handled with a confirmation prompt.
+		selectedSet := make(map[string]bool, len(selectedIDs))
+		for _, id := range selectedIDs {
+			selectedSet[id] = true
+		}
+
+		var deselected []registry.Agent
+		for _, agent := range catalog.Agents {
+			if installed[agent.ID] && !selectedSet[agent.ID] {
+				deselected = append(deselected, agent)
+			}
+		}
+
+		if len(selectedIDs) == 0 && len(deselected) == 0 {
+			cmd.Println("No agents selected. Nothing to install.")
+			return cfg, nil
+		}
+
+		if len(deselected) == 0 {
+			// No installed agents deselected — proceed to installation.
+			break
+		}
+
+		var needsRestart bool
+		if len(deselected) == 1 {
+			// Single agent — existing per-agent 3-option flow.
+			agent := deselected[0]
 			choice := h.uninstallChoiceFn(agent.Name)
 			switch choice {
 			case uninstallAppOnly:
@@ -255,12 +278,14 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 					cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
 				} else {
 					cmd.Printf("Uninstalled %s\n", agent.Name)
+					delete(installed, agent.ID)
 				}
 			case uninstallAppConfig:
 				if err := h.uninstallAgent(agent); err != nil {
 					cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
 				} else {
 					cmd.Printf("Uninstalled %s (app)\n", agent.Name)
+					delete(installed, agent.ID)
 				}
 				if err := h.uninstallConfig(agent); err != nil {
 					cmd.Printf("Warning: failed to clean config for %s: %v\n", agent.Name, err)
@@ -268,11 +293,41 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 					cmd.Printf("Cleaned config for %s\n", agent.Name)
 				}
 			case uninstallCancel:
-				selectedIDs = append(selectedIDs, agent.ID)
-				selectedSet[agent.ID] = true
-				cmd.Printf("Keeping %s installed\n", agent.Name)
+				// Cancel — re-launch TUI so the user can continue editing.
+				// The agent stays in the installed map, so it will be
+				// pre-checked when the TUI re-launches.
+				needsRestart = true
+			}
+		} else {
+			// Multiple agents — combined confirmation prompt.
+			names := make([]string, len(deselected))
+			for i, a := range deselected {
+				names[i] = a.Name
+			}
+			msg := fmt.Sprintf("Some selected agents are already installed: %s. Uninstall them as well?", strings.Join(names, ", "))
+			if h.confirmFn(msg) {
+				for _, agent := range deselected {
+					if err := h.uninstallAgent(agent); err != nil {
+						cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
+					} else {
+						cmd.Printf("Uninstalled %s\n", agent.Name)
+						delete(installed, agent.ID)
+					}
+				}
+			} else {
+				needsRestart = true
 			}
 		}
+
+		if needsRestart {
+			// Rebuild agent selection items with updated installed state
+			// and re-launch the TUI.
+			agentItems = buildAgentItemsForAdd(h, catalog, installed)
+			continue
+		}
+
+		// No cancels — proceed to installation.
+		break
 	}
 
 	toInstall := findAgentsByIDs(catalog, selectedIDs)
