@@ -82,18 +82,18 @@ When a user deselects an installed agent in the interactive TUI flow (`runAddFlo
 
 The combined prompt SHALL use `confirmFn` with a message like: `"Some selected agents are already installed: Claude Code, OpenCode. Uninstall them as well? [y/N]"`.
 
-When the combined prompt is confirmed (y/yes), the system SHALL uninstall ALL listed agents using `UninstallAgent` (app-only). When declined, the system SHALL keep all agents in the `installed` map and SHALL restart the TUI selection loop.
+When the combined prompt is confirmed (y/yes), the system SHALL uninstall ALL listed agents using `UninstallAgent` (app-only) and SHALL restart the TUI selection loop with the updated installed state. When declined, the system SHALL keep all agents in the `installed` map and SHALL restart the TUI selection loop.
 
 The per-agent 3-option prompt SHALL remain unchanged with options:
-1. **"Uninstall app only"** — calls `UninstallAgent`
-2. **"Uninstall app + config data"** — calls `UninstallAgent` AND `UninstallConfig`
-3. **"Cancel"** — restarts the TUI selection flow with the cancelled agent restored
+1. **"Uninstall app only"** — calls `UninstallAgent`, then restarts the TUI selection loop
+2. **"Uninstall app + config data"** — calls `UninstallAgent` AND `UninstallConfig`, then restarts the TUI selection loop
+3. **"Cancel"** — restarts the TUI selection flow with the cancelled agent restored (no uninstall executed)
 
-When Cancel is chosen for ANY deselected installed agent (in per-agent mode), the system SHALL:
-- NOT execute any uninstall for that agent
+After ANY uninstall decision (option 1, 2, 3, or bulk confirm/decline), the system SHALL:
 - Rebuild the agent selection items using `buildAgentItemsForAdd` with the updated installed map
 - Re-launch the Bubbletea TUI for re-selection
-- If agents were already uninstalled (via options 1 or 2) before a Cancel choice, they SHALL NOT appear pre-checked in the re-launched TUI
+- Agents that were uninstalled SHALL NOT appear pre-checked in the re-launched TUI
+- Agents that were cancelled (not uninstalled) SHALL remain pre-checked
 
 If NO installed agents were deselected, the system SHALL skip the uninstall prompt entirely and proceed directly to installation.
 
@@ -106,7 +106,7 @@ If NO installed agents were deselected, the system SHALL skip the uninstall prom
 - THEN a single combined prompt SHALL appear listing both names
 - WHEN the user types "y"
 - THEN `UninstallAgent` SHALL be called for both agents
-- AND the flow proceeds to installation
+- AND the TUI SHALL re-launch with both agents no longer pre-checked
 
 #### Scenario: Multiple installed agents deselected, user declines bulk uninstall
 
@@ -147,14 +147,14 @@ If NO installed agents were deselected, the system SHALL skip the uninstall prom
 - AND the user deselects the same agent again
 - AND the user selects option 1 (Uninstall app only) at the prompt
 - THEN the agent IS uninstalled
-- AND the flow proceeds to installation
+- AND the TUI SHALL re-launch with the agent no longer pre-checked
 
-#### Scenario: No cancels, flow proceeds directly
+#### Scenario: Uninstall app only/app+config restarts TUI
 
 - GIVEN an installed agent is deselected in the TUI
 - WHEN the user selects option 1 or 2 at the prompt
 - THEN the agent IS uninstalled
-- AND the flow proceeds to installation without re-launching the TUI
+- AND the TUI SHALL re-launch with the agent no longer pre-checked
 
 #### Scenario: Invalid input re-prompts
 
