@@ -231,7 +231,7 @@ func TestAddCommand_TUIEmptySelection(t *testing.T) {
 			return nil
 		},
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
-			return nil, nil // user cancelled
+			return []string{}, nil // user confirmed empty selection (Enter with nothing checked)
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error { return nil },

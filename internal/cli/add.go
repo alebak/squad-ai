@@ -242,6 +242,14 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 			return nil, fmt.Errorf("TUI selection failed: %w", err)
 		}
 
+		// nil means the user quit (q, Ctrl+C, Escape) — exit cleanly without
+		// prompting to uninstall or install anything.
+		// An empty (but non-nil) slice means the user pressed Enter with
+		// nothing checked — that is a confirmed selection with no agents.
+		if selectedIDs == nil {
+			return cfg, nil
+		}
+
 		// Collect deselected installed agents BEFORE the empty-check so that
 		// the "unselect all" case (selectedIDs is empty but installed agents
 		// were deselected) is handled with a confirmation prompt.

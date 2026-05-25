@@ -73,9 +73,47 @@ Installed agents with met runtime dependencies SHALL be pre-checked on TUI load.
 - WHEN the TUI loads
 - THEN the agent checkbox SHALL be unchecked (○)
 
+### Requirement: TUI Quit Clean Exit
+
+When the user quits the TUI (via `q`, `Ctrl+C`, or `Escape`), the system MUST exit the interactive flow immediately WITHOUT showing the uninstall prompt and WITHOUT installing any agents.
+
+`RunSelection` SHALL return `nil, nil` when the user quits and `[]string{}, nil` when the user confirms an empty selection with Enter. The `runAddFlowInteractive` function MUST distinguish these cases:
+- `nil` → user quit, return `cfg, nil` immediately
+- `[]string{}` (non-nil empty slice) → user confirmed nothing selected, proceed to uninstall/restart logic
+- non-empty slice → proceed to installation
+
+#### Scenario: User presses q and exits cleanly
+
+- GIVEN the TUI is open with installed agents
+- WHEN the user presses `q`
+- THEN the command returns to the shell without any prompt
+- AND no uninstall is called
+- AND no install happens
+
+#### Scenario: User presses Ctrl+C and exits cleanly
+
+- GIVEN the TUI is open
+- WHEN the user presses `Ctrl+C`
+- THEN the command returns to the shell without any prompt
+
+#### Scenario: User presses Escape and exits cleanly
+
+- GIVEN the TUI is open
+- WHEN the user presses `Escape`
+- THEN the command returns to the shell without any prompt
+
+#### Scenario: User confirms empty selection (Enter with nothing checked)
+
+- GIVEN the TUI is open with no agents checked
+- WHEN the user presses `Enter`
+- THEN the system prints "No agents selected. Nothing to install."
+- AND the command returns cleanly
+
 ### Requirement: 3-Option Uninstall Prompt
 
-When a user deselects an installed agent in the interactive TUI flow (`runAddFlowInteractive`), the system SHALL handle the deselection as follows:
+When a user deselects an installed agent after confirming a selection with Enter in the interactive TUI flow (`runAddFlowInteractive`), the system SHALL handle the deselection as follows:
+
+(Previously: applied to any RunSelection return value, including nil/quit. The nil/quit case is now handled by the TUI Quit Clean Exit requirement.)
 
 - If **only one** installed agent was deselected, the system SHALL display the existing 3-option prompt (Uninstall app only / Uninstall app + config data / Cancel).
 - If **multiple** installed agents were deselected simultaneously, the system SHALL display a SINGLE combined confirmation prompt listing ALL deselected installed agent names.
@@ -162,6 +200,13 @@ If NO installed agents were deselected, the system SHALL skip the uninstall prom
 - WHEN the user enters "4" or "abc"
 - THEN the prompt SHALL display an error message
 - AND re-display the 3 options
+
+#### Scenario: nil (quit) does not trigger uninstall prompt
+
+- GIVEN the TUI is open with an installed agent deselected
+- WHEN the user presses `q` instead of `Enter`
+- THEN the uninstall prompt SHALL NOT appear
+- AND the command exits cleanly
 
 ### Requirement: Registry Fetch Failure
 

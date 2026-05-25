@@ -301,8 +301,14 @@ func (m model) selectedIDs() []string {
 // RunSelection launches the Bubbletea TUI and returns the IDs of all
 // agents the user selected (checked boxes when Enter was pressed).
 //
-// If the user quits with q, Ctrl+C, or Escape, RunSelection returns an
-// empty slice and no error. An error is returned only for fatal TUI errors.
+// Return values encode three outcomes:
+//   - nil, nil       — user quit (q, Ctrl+C, Escape) — no selection made
+//   - []string{}, nil — user pressed Enter with nothing checked — confirmed empty
+//   - [ids...], nil  — user pressed Enter with checked agents
+//   - nil, error     — fatal TUI error
+//
+// Callers MUST distinguish nil from an empty slice: nil means the user
+// wants to exit without taking any action.
 func RunSelection(agents []AgentItem) ([]string, error) {
 	if len(agents) == 0 {
 		return nil, nil
