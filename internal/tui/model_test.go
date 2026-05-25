@@ -134,7 +134,7 @@ func TestModel_BlockedAgentNoToggle(t *testing.T) {
 	assert.False(t, m.checked[3], "blocked agent should remain unchecked")
 }
 
-func TestModel_EnterConfirms(t *testing.T) {
+func TestModel_EnterOnDoneConfirms(t *testing.T) {
 	m := newModel(testAgents())
 
 	// Check opencode (index 2, not PreChecked)
@@ -147,6 +147,8 @@ func TestModel_EnterConfirms(t *testing.T) {
 	m = updateModel(m, "j") // index 4 (aider, PreChecked)
 	m = updateModelKey(m, tea.KeySpace)
 
+	// Navigate to Done (last item) and press Enter
+	m = updateModel(m, "j") // index 5 (✓ Done)
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mFinal := mResult.(model)
 
@@ -155,7 +157,7 @@ func TestModel_EnterConfirms(t *testing.T) {
 	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, mFinal.selectedIDs())
 }
 
-func TestModel_EnterIncludesToggledOn(t *testing.T) {
+func TestModel_EnterOnDoneReturnsSelection(t *testing.T) {
 	m := newModel(testAgents())
 
 	// claude-code (index 1) starts PreChecked — uncheck it
@@ -171,7 +173,8 @@ func TestModel_EnterIncludesToggledOn(t *testing.T) {
 	m = updateModel(m, "j") // index 4
 	m = updateModelKey(m, tea.KeySpace)
 
-	// Confirm — only opencode should remain
+	// Navigate to Done (last item) and press Enter
+	m = updateModel(m, "j") // index 5 (✓ Done)
 	final, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	ids := final.(model).selectedIDs()
 	assert.ElementsMatch(t, []string{"opencode"}, ids)
@@ -413,4 +416,78 @@ func TestModel_NoEmojiInView(t *testing.T) {
 	assert.NotContains(t, view, "🤖", "no title emoji")
 	assert.NotContains(t, view, "✅", "no installed emoji")
 	assert.NotContains(t, view, "⛔", "no blocked emoji")
+}
+
+func TestModel_EnterTogglesAgent(t *testing.T) {
+	m := newModel(testAgents())
+
+	// Navigate to claude-code (index 1, PreChecked)
+	m = updateModel(m, "j")
+	assert.True(t, m.checked[1], "claude-code starts checked")
+
+	// Enter should toggle (same as Space)
+	m = updateModelKey(m, tea.KeyEnter)
+	assert.False(t, m.checked[1], "claude-code should be unchecked after Enter toggle")
+
+	// Enter toggles again
+	m = updateModelKey(m, tea.KeyEnter)
+	assert.True(t, m.checked[1], "claude-code should be re-checked after second Enter")
+}
+
+func TestModel_DoneItemRenders(t *testing.T) {
+	m := newModel(testAgents())
+	m.isReady = true
+	m.width = 60
+
+	view := m.View()
+	assert.Contains(t, view, "✓ Done", "Done item should appear in the rendered view")
+	assert.Contains(t, view, "space/enter toggle", "help bar should mention space/enter toggle")
+}
+
+func TestModel_SelectedIDsExcludesDone(t *testing.T) {
+	m := newModel(testAgents())
+
+	// Select all compatible agents
+	m = updateModel(m, "a")
+
+	ids := m.selectedIDs()
+	assert.NotContains(t, ids, "_done", "Done sentinel should not appear in selected IDs")
+}
+
+func TestModel_ToggleAllSkipsDone(t *testing.T) {
+	m := newModel(testAgents())
+
+	// toggleAll with 'a'
+	m = updateModel(m, "a")
+
+	// All compatible agents should be checked
+	for i, a := range m.agents {
+		if a.IsSelectAll || a.IsDone || a.Blocked {
+			continue
+		}
+		assert.True(t, m.checked[i], "%s should be checked after toggleAll", a.ID)
+	}
+
+	// Done should not be in checked map (access returns zero value)
+	doneIdx := len(m.agents) - 1
+	assert.False(t, m.checked[doneIdx], "Done sentinel should remain unchecked after toggleAll")
+}
+
+func TestModel_DoneItemCursorWrap(t *testing.T) {
+	m := newModel(testAgents())
+	doneIdx := len(m.agents) - 1
+
+	// Navigate down to Done
+	for range doneIdx {
+		m = updateModel(m, "j")
+	}
+	assert.Equal(t, doneIdx, m.cursor, "cursor should be on Done sentinel")
+
+	// One more down wraps to select-all (index 0)
+	m = updateModel(m, "j")
+	assert.Equal(t, 0, m.cursor, "cursor should wrap from Done to first item")
+
+	// Up from first wraps to Done
+	m = updateModel(m, "k")
+	assert.Equal(t, doneIdx, m.cursor, "cursor should wrap from first to Done sentinel")
 }

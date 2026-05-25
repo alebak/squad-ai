@@ -17,6 +17,8 @@ import (
 // Blocked agents show their BlockReason as "(reason)" appended to Name.
 // IsSelectAll marks the sentinel select-all row (always first element).
 // PreChecked marks agents that should start with their checkbox on.
+// IsDone marks the sentinel Done row (always last element) — pressing Enter
+// or Space on it confirms the selection and exits.
 type AgentItem struct {
 	ID          string
 	Name        string
@@ -25,6 +27,7 @@ type AgentItem struct {
 	BlockReason string // human-readable reason, e.g. "requires Node.js 22+"
 	IsSelectAll bool   // true for the sentinel select-all row
 	PreChecked  bool   // true if agent is installed and compatible
+	IsDone      bool   // true for the sentinel Done row
 }
 
 // ──── Styles ─────────────────────────────────────────────────────────────────
@@ -70,9 +73,14 @@ type model struct {
 // newModel creates a model from the given agent items.
 // Agents with PreChecked=true (and not blocked, not select-all) start checked.
 // Blocked agents cannot be toggled.
+// A sentinel Done item is appended at the end for confirming the selection.
 func newModel(agents []AgentItem) model {
 	s := spinner.New()
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+
+	// Append the Done sentinel at the end of the agent list.
+	done := AgentItem{ID: "_done", Name: "✓ Done", IsDone: true}
+	agents = append(agents, done)
 
 	m := model{
 		agents:  agents,
@@ -81,7 +89,7 @@ func newModel(agents []AgentItem) model {
 		spinner: s,
 	}
 	for i, a := range agents {
-		if a.PreChecked && !a.Blocked && !a.IsSelectAll {
+		if a.PreChecked && !a.Blocked && !a.IsSelectAll && !a.IsDone {
 			m.checked[i] = true
 		}
 	}
@@ -141,15 +149,16 @@ func (m model) handleSpecialKey(msg tea.KeyMsg) (model, bool) {
 		if m.cursor >= len(m.agents) {
 			m.cursor = 0
 		}
-	case tea.KeySpace:
+	case tea.KeySpace, tea.KeyEnter:
+		if m.agents[m.cursor].IsDone {
+			m.isSubmitted = true
+			return m, true
+		}
 		if m.agents[m.cursor].IsSelectAll {
 			m.toggleAll()
 		} else if !m.agents[m.cursor].Blocked {
 			m.checked[m.cursor] = !m.checked[m.cursor]
 		}
-	case tea.KeyEnter:
-		m.isSubmitted = true
-		return m, true
 	}
 	return m, false
 }
@@ -196,7 +205,7 @@ func (m model) View() string {
 
 	b.WriteString("\n")
 	b.WriteString(styleHelp.Render(
-		"↑↓/jk navigate • space toggle • enter confirm • q quit",
+		"↑↓/jk navigate • space/enter toggle • q quit",
 	))
 
 	return styleBorder.Render(b.String())
@@ -210,6 +219,12 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 
 	if agent.IsSelectAll {
 		return m.renderSelectAllRow(cursor)
+	}
+
+	if agent.IsDone {
+		// Done sentinel: bold label, no checkbox, always at bottom.
+		label := styleTitle.Render(agent.Name)
+		return fmt.Sprintf("%s%s", cursor, label)
 	}
 
 	var checkbox string
@@ -234,10 +249,11 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 // renderSelectAllRow renders the sentinel select-all row using the same
 // ◉/○ checkbox style as agent rows. Label is "select all" when any
 // compatible agent is unchecked, "unselect all" when all are checked.
+// The Done sentinel is skipped since it is not a toggleable agent.
 func (m model) renderSelectAllRow(cursor string) string {
 	allChecked := true
 	for i, a := range m.agents {
-		if a.IsSelectAll || a.Blocked {
+		if a.IsSelectAll || a.IsDone || a.Blocked {
 			continue
 		}
 		if !m.checked[i] {
@@ -261,11 +277,12 @@ func (m model) renderSelectAllRow(cursor string) string {
 
 // toggleAll flips all compatible agents: if any are unchecked, check all;
 // if all are checked, uncheck all. Blocked agents are never affected.
-// The select-all sentinel (index 0) is skipped since it's not a real agent.
+// The select-all sentinel (index 0) and Done sentinel (last) are skipped
+// since they are not real agents.
 func (m *model) toggleAll() {
 	allChecked := true
 	for i, a := range m.agents {
-		if a.IsSelectAll || a.Blocked {
+		if a.IsSelectAll || a.IsDone || a.Blocked {
 			continue
 		}
 		if !m.checked[i] {
@@ -274,7 +291,7 @@ func (m *model) toggleAll() {
 		}
 	}
 	for i, a := range m.agents {
-		if a.IsSelectAll || a.Blocked {
+		if a.IsSelectAll || a.IsDone || a.Blocked {
 			continue
 		}
 		m.checked[i] = !allChecked
@@ -283,10 +300,11 @@ func (m *model) toggleAll() {
 
 // selectedIDs returns the list of checked agent IDs.
 // The select-all sentinel is skipped since it has no real agent ID.
+// The Done sentinel is skipped since it is not a real agent.
 func (m model) selectedIDs() []string {
 	var ids []string
 	for i, a := range m.agents {
-		if a.IsSelectAll {
+		if a.IsSelectAll || a.IsDone {
 			continue
 		}
 		if m.checked[i] {
