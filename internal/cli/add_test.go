@@ -315,6 +315,7 @@ func TestAddCommand_UninstallPromptCancel(t *testing.T) {
 func TestAddCommand_UninstallAppOnly(t *testing.T) {
 	buf := new(bytes.Buffer)
 	var uninstalledAgent string
+	var runSelectionCallCount int
 
 	h := &addHandler{
 		registryURL: "",
@@ -331,7 +332,13 @@ func TestAddCommand_UninstallAppOnly(t *testing.T) {
 			return nil
 		},
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
-			return []string{"opencode"}, nil
+			runSelectionCallCount++
+			if runSelectionCallCount == 1 {
+				// First TUI: user deselects claude-code (installed)
+				return []string{"opencode"}, nil
+			}
+			// Second TUI after restart: claude-code was uninstalled, user selects both
+			return []string{"opencode", "claude-code"}, nil
 		},
 		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -358,6 +365,7 @@ func TestAddCommand_UninstallAppOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "claude-code", uninstalledAgent)
+	assert.Equal(t, 2, runSelectionCallCount, "TUI should re-launch after uninstall")
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code")
 }
 
@@ -365,6 +373,7 @@ func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
 	buf := new(bytes.Buffer)
 	var uninstalledAgent string
 	var configCleanedAgent string
+	var runSelectionCallCount int
 
 	h := &addHandler{
 		registryURL: "",
@@ -381,7 +390,13 @@ func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
 			return nil
 		},
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
-			return []string{"opencode"}, nil
+			runSelectionCallCount++
+			if runSelectionCallCount == 1 {
+				// First TUI: user deselects claude-code (installed)
+				return []string{"opencode"}, nil
+			}
+			// Second TUI after restart: claude-code was uninstalled, user selects both
+			return []string{"opencode", "claude-code"}, nil
 		},
 		isRuntimeMet: func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -409,6 +424,7 @@ func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
 
 	assert.Equal(t, "claude-code", uninstalledAgent)
 	assert.Equal(t, "claude-code", configCleanedAgent)
+	assert.Equal(t, 2, runSelectionCallCount, "TUI should re-launch after uninstall")
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code (app)")
 	assert.Contains(t, buf.String(), "Cleaned config for Claude Code")
 }
@@ -416,6 +432,7 @@ func TestAddCommand_UninstallAppAndConfig(t *testing.T) {
 func TestAddCommand_BulkUninstallConfirm(t *testing.T) {
 	buf := new(bytes.Buffer)
 	var uninstalledAgents []string
+	var runSelectionCallCount int
 
 	h := &addHandler{
 		registryURL: "",
@@ -433,8 +450,13 @@ func TestAddCommand_BulkUninstallConfirm(t *testing.T) {
 			return nil
 		},
 		runSelection: func(items []tui.AgentItem) ([]string, error) {
-			// User deselected both installed agents
-			return []string{}, nil
+			runSelectionCallCount++
+			if runSelectionCallCount == 1 {
+				// First TUI: user deselected both installed agents
+				return []string{}, nil
+			}
+			// Second TUI after restart: both were uninstalled, user selects them
+			return []string{"claude-code", "opencode"}, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -455,6 +477,7 @@ func TestAddCommand_BulkUninstallConfirm(t *testing.T) {
 
 	// Both agents should be uninstalled
 	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, uninstalledAgents)
+	assert.Equal(t, 2, runSelectionCallCount, "TUI should re-launch after bulk uninstall")
 	output := buf.String()
 	assert.Contains(t, output, "Uninstalled Claude Code")
 	assert.Contains(t, output, "Uninstalled OpenCode")

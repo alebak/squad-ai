@@ -280,6 +280,9 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 					cmd.Printf("Uninstalled %s\n", agent.Name)
 					delete(installed, agent.ID)
 				}
+				// Restart the TUI loop so the user sees the updated state and can
+				// continue managing agents.
+				needsRestart = true
 			case uninstallAppConfig:
 				if err := h.uninstallAgent(agent); err != nil {
 					cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
@@ -292,6 +295,9 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 				} else {
 					cmd.Printf("Cleaned config for %s\n", agent.Name)
 				}
+				// Restart the TUI loop so the user sees the updated state and can
+				// continue managing agents.
+				needsRestart = true
 			case uninstallCancel:
 				// Cancel — re-launch TUI so the user can continue editing.
 				// The agent stays in the installed map, so it will be
@@ -314,6 +320,8 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 						delete(installed, agent.ID)
 					}
 				}
+				// Restart the TUI loop so the user sees the updated state.
+				needsRestart = true
 			} else {
 				needsRestart = true
 			}
