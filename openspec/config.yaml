@@ -69,11 +69,16 @@ rules:
   apply:
     - Follow existing code patterns — prioritize clarity over cleverness
     - The developer is learning Go — add comments explaining idiomatic patterns
+    - Tests follow go-testing skill patterns: table-driven, t.TempDir(), testing.Short()
+    - No real network/home directory in unit tests; mock or skip with testing.Short()
     tdd: false
     test_command: "go test ./..."
   verify:
     test_command: "go test ./... -v -count=1"
     build_command: "go build ./cmd/squad"
     coverage_threshold: 0
+    - Check tests use table-driven pattern where multiple cases exist
+    - Check tests use t.TempDir() instead of real filesystem paths
+    - Check integration tests are skippable with testing.Short()
   archive:
     - Warn before merging destructive deltas
