@@ -1,11 +1,6 @@
-# Spec: `squad add` Command
+# Delta for add
 
-## References
-
-- PRD §8 (Comandos del CLI) — `squad add` table entry
-- PRD §7.4 (Modo interactivo manual) — add usage context
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: TUI Interactive Selection
 
@@ -73,51 +68,6 @@ Installed agents with met runtime dependencies SHALL be pre-checked on TUI load.
 - WHEN the TUI loads
 - THEN the agent checkbox SHALL be unchecked (○)
 
-### Requirement: 3-Option Uninstall Prompt
+## REMOVED Requirements
 
-When a user deselects an installed agent in the interactive TUI flow (`runAddFlowInteractive`), the system SHALL display a 3-option prompt instead of a binary yes/no confirmation.
-
-The options SHALL be:
-1. **"Uninstall app only"** — calls the existing `UninstallAgent` to remove the binary
-2. **"Uninstall app + config data"** — calls `UninstallAgent` AND `UninstallConfig` to remove binary + config directories
-3. **"Cancel"** — does nothing, and the agent SHALL remain selected in the TUI result
-
-The prompt SHALL accept numeric input (1, 2, 3). Any invalid input SHALL re-prompt.
-
-#### Scenario: User chooses "Uninstall app only"
-
-- GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 1 at the prompt
-- THEN `UninstallAgent` is called for that agent
-- AND `UninstallConfig` is NOT called
-
-#### Scenario: User chooses "Uninstall app + config data"
-
-- GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 2 at the prompt
-- THEN `UninstallAgent` is called for that agent
-- AND `UninstallConfig` is called for that agent
-
-#### Scenario: User chooses "Cancel"
-
-- GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 3 at the prompt
-- THEN neither `UninstallAgent` nor `UninstallConfig` is called
-- AND the agent remains selected
-
-#### Scenario: Invalid input re-prompts
-
-- GIVEN the 3-option prompt is displayed
-- WHEN the user enters "4" or "abc"
-- THEN the prompt SHALL display an error message
-- AND re-display the 3 options
-
-### Requirement: Registry Fetch Failure
-
-If the registry cannot be fetched and no cache is available, `squad add` SHALL error with a message explaining the failure.
-
-#### Scenario: Registry fetch failure
-
-- GIVEN no internet and no cache
-- WHEN the user runs `squad add`
-- THEN the command errors explaining the network failure
+### Requirement: (none removed)

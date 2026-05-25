@@ -16,6 +16,7 @@ import (
 // AgentItem is the display model for one agent in the TUI selection list.
 // Blocked agents show their BlockReason as "(reason)" appended to Name.
 // IsSelectAll marks the sentinel select-all row (always first element).
+// PreChecked marks agents that should start with their checkbox on.
 type AgentItem struct {
 	ID          string
 	Name        string
@@ -23,6 +24,7 @@ type AgentItem struct {
 	Blocked     bool   // disabled because a runtime dependency is missing
 	BlockReason string // human-readable reason, e.g. "requires Node.js 22+"
 	IsSelectAll bool   // true for the sentinel select-all row
+	PreChecked  bool   // true if agent is installed and compatible
 }
 
 // ──── Styles ─────────────────────────────────────────────────────────────────
@@ -66,17 +68,24 @@ type model struct {
 }
 
 // newModel creates a model from the given agent items.
-// All agents start unchecked. Blocked agents cannot be toggled.
+// Agents with PreChecked=true (and not blocked, not select-all) start checked.
+// Blocked agents cannot be toggled.
 func newModel(agents []AgentItem) model {
 	s := spinner.New()
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
-	return model{
+	m := model{
 		agents:  agents,
 		cursor:  0,
 		checked: make(map[int]bool, len(agents)),
 		spinner: s,
 	}
+	for i, a := range agents {
+		if a.PreChecked && !a.Blocked && !a.IsSelectAll {
+			m.checked[i] = true
+		}
+	}
+	return m
 }
 
 // Init implements tea.Model.
@@ -180,6 +189,9 @@ func (m model) View() string {
 	for i, agent := range m.agents {
 		b.WriteString(m.renderAgentRow(i, agent))
 		b.WriteString("\n")
+		if i == 0 {
+			b.WriteString("\n")
+		}
 	}
 
 	b.WriteString("\n")
@@ -219,9 +231,9 @@ func (m model) renderAgentRow(i int, agent AgentItem) string {
 	return line
 }
 
-// renderSelectAllRow renders the sentinel select-all row.
-// Label is "select all" when any compatible agent is unchecked,
-// "unselect all" when all compatible agents are checked.
+// renderSelectAllRow renders the sentinel select-all row using the same
+// ◉/○ checkbox style as agent rows. Label is "select all" when any
+// compatible agent is unchecked, "unselect all" when all are checked.
 func (m model) renderSelectAllRow(cursor string) string {
 	allChecked := true
 	for i, a := range m.agents {
@@ -237,10 +249,10 @@ func (m model) renderSelectAllRow(cursor string) string {
 	var checkbox string
 	var label string
 	if allChecked {
-		checkbox = styleChecked.Render("[x]")
+		checkbox = styleChecked.Render("◉")
 		label = "unselect all"
 	} else {
-		checkbox = "[ ]"
+		checkbox = "○"
 		label = "select all"
 	}
 

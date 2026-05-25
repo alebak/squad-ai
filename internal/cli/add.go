@@ -126,11 +126,6 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
-	selected := make(map[string]bool, len(cfg.SelectedAgents))
-	for _, id := range cfg.SelectedAgents {
-		selected[id] = true
-	}
-
 	catalog, err := h.fetchRegistry(context.Background(), h.registryURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetching registry: %w\nTry again when online or use a cached registry.", err)
@@ -140,7 +135,10 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 		return cfg, nil
 	}
 
-	agentItems := buildAgentItemsForAdd(h, catalog, selected)
+	// Detect installed agents early — needed for pre-checked rendering and uninstall prompt.
+	installed := h.detectAll(catalog.Agents)
+
+	agentItems := buildAgentItemsForAdd(h, catalog, installed)
 	if len(agentItems) == 0 {
 		cmd.Println("No agents found in the registry.")
 		return cfg, nil
@@ -149,13 +147,14 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 	if !h.isTerminal() {
 		return runAddFlowNonInteractive(h, cmd, agentItems, cfg)
 	}
-	return runAddFlowInteractive(h, cmd, agentItems, catalog, cfg, cfgPath)
+	return runAddFlowInteractive(h, cmd, agentItems, catalog, cfg, cfgPath, installed)
 }
 
 // buildAgentItemsForAdd builds TUI AgentItems for ALL registry agents.
 // The first item is always the select-all sentinel row.
-// Each agent includes runtime compatibility info; all start unchecked.
-func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, _ map[string]bool) []tui.AgentItem {
+// Each agent includes runtime compatibility info.
+// PreChecked=true for agents that are installed AND not blocked.
+func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, installed map[string]bool) []tui.AgentItem {
 	agentItems := []tui.AgentItem{
 		{Name: "select all", IsSelectAll: true},
 	}
@@ -172,6 +171,7 @@ func buildAgentItemsForAdd(h *addHandler, catalog *registry.Catalog, _ map[strin
 			Description: agent.Description,
 			Blocked:     blocked,
 			BlockReason: reason,
+			PreChecked:  installed[agent.ID] && !blocked,
 		})
 	}
 	return agentItems
@@ -229,9 +229,8 @@ func defaultUninstallChoiceFn(agentName string) uninstallChoice {
 // runAddFlowInteractive launches the TUI for agent selection, installs the
 // chosen agents, prompts to uninstall deselected installed agents,
 // and saves the updated config.
-func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, catalog *registry.Catalog, cfg *config.Config, cfgPath string) (*config.Config, error) {
-	// Detect installed agents before TUI (for uninstall prompt).
-	installed := h.detectAll(catalog.Agents)
+// installed is pre-computed by runAddFlow to enable pre-checked rendering.
+func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, catalog *registry.Catalog, cfg *config.Config, cfgPath string, installed map[string]bool) (*config.Config, error) {
 
 	selectedIDs, err := h.runSelection(agentItems)
 	if err != nil {

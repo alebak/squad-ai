@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,13 +10,14 @@ import (
 
 // testAgents returns a standard set of agents for testing.
 // The first agent is always the select-all sentinel.
+// Some agents have PreChecked=true (simulating installed + compatible).
 func testAgents() []AgentItem {
 	return []AgentItem{
 		{Name: "select all", IsSelectAll: true},
-		{ID: "claude-code", Name: "Claude Code", Blocked: false},
+		{ID: "claude-code", Name: "Claude Code", Blocked: false, PreChecked: true},
 		{ID: "opencode", Name: "OpenCode", Blocked: false},
 		{ID: "codex", Name: "Codex CLI", Blocked: true, BlockReason: "requires Node.js 22+"},
-		{ID: "aider", Name: "Aider", Blocked: false},
+		{ID: "aider", Name: "Aider", Blocked: false, PreChecked: true},
 	}
 }
 
@@ -38,12 +40,17 @@ func TestModel_InitialState(t *testing.T) {
 	assert.Equal(t, 0, m.cursor, "cursor starts at 0")
 	assert.True(t, m.agents[0].IsSelectAll, "first agent is select-all sentinel")
 
-	// All agents start unchecked
+	// PreChecked agents start checked; others start unchecked
 	for i, a := range m.agents {
 		if a.IsSelectAll {
+			assert.False(t, m.checked[i], "select-all sentinel should not be in checked map")
 			continue
 		}
-		assert.False(t, m.checked[i], "agent %d should start unchecked", i)
+		if a.PreChecked && !a.Blocked {
+			assert.True(t, m.checked[i], "agent %s (PreChecked) should start checked", a.ID)
+		} else {
+			assert.False(t, m.checked[i], "agent %s should start unchecked", a.ID)
+		}
 	}
 
 	assert.False(t, m.isSubmitted)
@@ -94,7 +101,7 @@ func TestModel_CursorArrows(t *testing.T) {
 
 func TestModel_ToggleCheck(t *testing.T) {
 	m := newModel(testAgents())
-	assert.False(t, m.checked[4], "aider starts unchecked")
+	assert.True(t, m.checked[4], "aider starts checked (PreChecked)")
 
 	// Navigate to aider (index 4 — index 0 is select-all)
 	for range 4 {
@@ -102,13 +109,13 @@ func TestModel_ToggleCheck(t *testing.T) {
 	}
 	assert.Equal(t, 4, m.cursor)
 
-	// Toggle with space
-	m = updateModelKey(m, tea.KeySpace)
-	assert.True(t, m.checked[4], "aider should now be checked")
-
-	// Toggle again → off
+	// Toggle with space — uncheck
 	m = updateModelKey(m, tea.KeySpace)
 	assert.False(t, m.checked[4], "aider should now be unchecked")
+
+	// Toggle again → on
+	m = updateModelKey(m, tea.KeySpace)
+	assert.True(t, m.checked[4], "aider should now be checked")
 }
 
 func TestModel_BlockedAgentNoToggle(t *testing.T) {
@@ -130,44 +137,44 @@ func TestModel_BlockedAgentNoToggle(t *testing.T) {
 func TestModel_EnterConfirms(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Check aider
-	m = updateModel(m, "j")
-	m = updateModel(m, "j")
-	m = updateModel(m, "j")
-	m = updateModel(m, "j") // now at index 4 (aider)
-	toggled, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	m = toggled.(model)
+	// Check opencode (index 2, not PreChecked)
+	m = updateModel(m, "j") // index 1 (claude-code, PreChecked)
+	m = updateModel(m, "j") // index 2 (opencode)
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Uncheck aider (index 4, PreChecked) so only claude-code + opencode remain
+	m = updateModel(m, "j") // index 3 (codex, blocked)
+	m = updateModel(m, "j") // index 4 (aider, PreChecked)
+	m = updateModelKey(m, tea.KeySpace)
 
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	mFinal := mResult.(model)
 
 	assert.True(t, mFinal.isSubmitted)
-	assert.ElementsMatch(t, []string{"aider"}, mFinal.selectedIDs())
+	// claude-code (PreChecked) + opencode (manually checked) = both selected
+	assert.ElementsMatch(t, []string{"claude-code", "opencode"}, mFinal.selectedIDs())
 }
 
 func TestModel_EnterIncludesToggledOn(t *testing.T) {
 	m := newModel(testAgents())
 
-	// Toggle on claude-code (index 1)
+	// claude-code (index 1) starts PreChecked — uncheck it
 	m = updateModel(m, "j")
 	m = updateModelKey(m, tea.KeySpace)
 
-	// Toggle on aider (index 4)
+	// opencode (index 2) starts unchecked — check it
 	m = updateModel(m, "j") // index 2
+	m = updateModelKey(m, tea.KeySpace)
+
+	// aider (index 4) starts PreChecked — uncheck it
 	m = updateModel(m, "j") // index 3
 	m = updateModel(m, "j") // index 4
 	m = updateModelKey(m, tea.KeySpace)
 
-	// Uncheck claude-code (go back to index 1)
-	m = updateModel(m, "k") // index 3
-	m = updateModel(m, "k") // index 2
-	m = updateModel(m, "k") // index 1
-	m = updateModelKey(m, tea.KeySpace)
-
-	// Confirm — only aider should remain
+	// Confirm — only opencode should remain
 	final, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	ids := final.(model).selectedIDs()
-	assert.ElementsMatch(t, []string{"aider"}, ids)
+	assert.ElementsMatch(t, []string{"opencode"}, ids)
 }
 
 func TestModel_CtrlCQuits(t *testing.T) {
@@ -218,6 +225,10 @@ func TestModel_ViewRenders(t *testing.T) {
 	assert.NotContains(t, view, "a select all", "help bar does not mention a key")
 	assert.Contains(t, view, "navigate")
 	assert.Contains(t, view, "toggle")
+	// Select-all uses ◉/○ not [x]/[ ]
+	assert.Contains(t, view, "○", "select-all uses ○ for unchecked style")
+	assert.NotContains(t, view, "[ ]", "no bracket-style checkboxes")
+	assert.NotContains(t, view, "[x]", "no bracket-style checkboxes")
 }
 
 func TestModel_NotReady(t *testing.T) {
@@ -299,24 +310,90 @@ func TestModel_SelectAllDynamicLabel(t *testing.T) {
 	m := newModel(testAgents())
 	m.isReady = true
 
-	// Initially unchecked: should show "select all"
+	// Initially: claude-code and aider checked, opencode unchecked
+	// Not all compatible checked → "select all"
 	view := m.View()
-	assert.Contains(t, view, "[ ] select all")
+	assert.Contains(t, view, "○ select all")
 
-	// Check one agent — label should still be "select all" (not ALL checked)
+	// Uncheck claude-code — still not all checked → "select all"
 	m = updateModelKey(m, tea.KeyDown) // move to claude-code (index 1)
 	m = updateModelKey(m, tea.KeySpace)
 	m.isReady = true
 
 	view2 := m.View()
-	assert.Contains(t, view2, "[ ] select all", "still select all — not all checked")
+	assert.Contains(t, view2, "○ select all", "still select all — not all checked")
 
 	// Check all compatible agents
 	m = updateModel(m, "a")
 	m.isReady = true
 
 	view3 := m.View()
-	assert.Contains(t, view3, "[x] unselect all", "all checked → unselect all")
+	assert.Contains(t, view3, "◉ unselect all", "all checked → unselect all")
+}
+
+func TestModel_BlankLineAfterSelectAll(t *testing.T) {
+	m := newModel(testAgents())
+	m.isReady = true
+	m.width = 60
+
+	view := m.View()
+	// The select-all row is followed by a blank line before the first agent.
+	// In the bordered view, split by newline to verify the blank line exists.
+	lines := strings.Split(view, "\n")
+	selectAllIdx := -1
+	claudeIdx := -1
+	for i, line := range lines {
+		if strings.Contains(line, "select all") {
+			selectAllIdx = i
+		}
+		if strings.Contains(line, "Claude Code") {
+			claudeIdx = i
+		}
+	}
+	assert.GreaterOrEqual(t, selectAllIdx, 0, "select-all line should be found")
+	assert.GreaterOrEqual(t, claudeIdx, 0, "Claude Code line should be found")
+	// There should be exactly one line between select-all and Claude Code
+	// (the blank separator). If claudeIdx == selectAllIdx+2, there's 1 blank line.
+	assert.Equal(t, selectAllIdx+2, claudeIdx,
+		"should be exactly one blank line between select-all and first agent")
+}
+
+func TestModel_PreCheckedSetsInitialState(t *testing.T) {
+	m := newModel(testAgents())
+
+	// claude-code (index 1) and aider (index 4) have PreChecked=true
+	assert.True(t, m.checked[1], "claude-code should start checked")
+	assert.True(t, m.checked[4], "aider should start checked")
+
+	// opencode (index 2) has PreChecked=false
+	assert.False(t, m.checked[2], "opencode should start unchecked")
+
+	// codex (index 3) is blocked with PreChecked=false
+	assert.False(t, m.checked[3], "blocked agent should start unchecked")
+}
+
+func TestModel_PreCheckedBlockedNotChecked(t *testing.T) {
+	agents := []AgentItem{
+		{Name: "select all", IsSelectAll: true},
+		{ID: "blocked-but-installed", Name: "Blocked But Installed", Blocked: true, PreChecked: true, BlockReason: "requires Node.js"},
+	}
+	m := newModel(agents)
+
+	// Blocked agent should NOT be checked even if PreChecked=true
+	assert.False(t, m.checked[1], "blocked agent should not be checked")
+}
+
+func TestModel_PreCheckedToggleWorks(t *testing.T) {
+	m := newModel(testAgents())
+
+	// claude-code (index 1) starts PreChecked — toggle should uncheck
+	m = updateModel(m, "j") // cursor 1
+	m = updateModelKey(m, tea.KeySpace)
+	assert.False(t, m.checked[1], "pre-checked agent should uncheck on toggle")
+
+	// Toggle again — should re-check
+	m = updateModelKey(m, tea.KeySpace)
+	assert.True(t, m.checked[1], "pre-checked agent should re-check on second toggle")
 }
 
 func TestModel_BlockedAgentNoEmoji(t *testing.T) {
