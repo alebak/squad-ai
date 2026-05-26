@@ -13,26 +13,29 @@
 
 The TUI SHALL display a list of all registry agents with checkboxes. The first row SHALL be a select-all sentinel using the same ◉/○ checkbox style as agent rows, with dynamic text "select all" when no compatible agents are checked or "unselect all" when all compatible agents are checked. A blank line SHALL separate the select-all row from the first agent row.
 
-The last row SHALL be a "✓ Done" sentinel item. The Done row SHALL NOT render a checkbox. The Done row SHALL be rendered with bold styling.
+The last row SHALL be an "Apply" sentinel item. A separator line rendered in the surface color SHALL appear immediately above the Apply item. The Apply row SHALL NOT render a checkbox. The Apply row SHALL be rendered with bold styling.
 
 Agent rows SHALL use ◉ (checked) / ○ (unchecked) as checkbox symbols. Agents with unmet runtime dependencies SHALL render their name followed by `(BlockReason)` in parentheses, styled as blocked (faint/gray). The title SHALL NOT contain emoji characters.
 
 Installed agents with met runtime dependencies SHALL be pre-checked on TUI load. Blocked agents SHALL NOT be pre-checked regardless of install state.
 
-Enter SHALL toggle the currently highlighted agent (same behavior as Space), except on the Done item where Enter SHALL confirm the selection and exit the TUI. Space SHALL also confirm on the Done item.
+Enter SHALL toggle the currently highlighted agent (same behavior as Space), except on the Apply item where Enter SHALL confirm the selection and exit the TUI. Space SHALL also confirm on the Apply item. The `a` key SHALL also confirm the selection from any cursor position.
 
-The done sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL NOT appear in the checkbox count.
+The header SHALL display "Squad AI (version 0.15.0)" with the mauve color for "Squad AI" and subdued color for the version.
 
-(Previously: Enter confirmed the entire selection and exited the TUI from any item. No Done sentinel existed. Before that: select-all used `[x]`/`[ ]` style, no blank line, all agents started unchecked)
+The apply sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL NOT appear in the checkbox count.
 
-#### Scenario: Interactive TUI with select-all and Done rows
+(Previously: The last row was "✓ Done". Enter confirmed only on Done. `a` key toggled all agents. No separator existed.)
+
+#### Scenario: Interactive TUI with select-all and Apply rows
 
 - GIVEN a registry with 3 agents and a TTY
 - WHEN the user runs `squad add`
 - THEN the TUI shows a select-all row as the first item
 - AND a blank line follows the select-all row
-- AND a "✓ Done" row appears as the last item
-- AND the Done row has no checkbox
+- AND an "Apply" row appears as the last item
+- AND a separator line appears above Apply
+- AND the Apply row has no checkbox
 
 #### Scenario: Select-all toggles all compatible agents
 
@@ -59,29 +62,35 @@ The done sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL N
 - WHEN the user presses Enter
 - THEN the agent checkbox toggles (check → uncheck or vice versa)
 
-#### Scenario: Enter on Done confirms selection
+#### Scenario: Enter on Apply confirms selection
 
-- GIVEN the TUI is open with cursor on the "✓ Done" row
+- GIVEN the TUI is open with cursor on the "Apply" row
 - WHEN the user presses Enter
 - THEN the system returns the selected agent IDs
 
-#### Scenario: Space on Done confirms selection
+#### Scenario: Space on Apply confirms selection
 
-- GIVEN the TUI is open with cursor on the "✓ Done" row
+- GIVEN the TUI is open with cursor on the "Apply" row
 - WHEN the user presses Space
 - THEN the system returns the selected agent IDs
 
-#### Scenario: Done excluded from selectedIDs
+#### Scenario: `a` key confirms selection
+
+- GIVEN the TUI is open
+- WHEN the user presses `a`
+- THEN the selection is confirmed (same as pressing Enter on Apply)
+
+#### Scenario: Apply excluded from selectedIDs
 
 - GIVEN the TUI has agents checked
 - WHEN `selectedIDs` is called
-- THEN the Done sentinel SHALL NOT appear in the returned IDs
+- THEN the Apply sentinel SHALL NOT appear in the returned IDs
 
-#### Scenario: Done excluded from toggleAll
+#### Scenario: Apply excluded from toggleAll
 
 - GIVEN the TUI is open with all compatible agents checked
 - WHEN `toggleAll` is called
-- THEN the Done sentinel SHALL remain unchecked and unchanged
+- THEN the Apply sentinel SHALL remain unchecked and unchanged
 
 #### Scenario: Blocked agents render without emoji
 
@@ -110,14 +119,23 @@ The done sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL N
 - WHEN the TUI loads
 - THEN the agent checkbox SHALL be unchecked (○)
 
+#### Scenario: Header shows version
+
+- GIVEN the TUI is open
+- THEN the header contains "Squad AI (version 0.15.0)"
+- AND the "Squad AI" part uses mauve color
+- AND the version part uses subdued/overlay color
+
 ### Requirement: TUI Quit Clean Exit
 
-When the user quits the TUI (via `q`, `Ctrl+C`, or `Escape`), the system MUST exit the interactive flow immediately WITHOUT showing the uninstall prompt and WITHOUT installing any agents.
+When the user quits the TUI (via `q`, `Ctrl+C`, or `Escape`), the system MUST exit the interactive flow immediately WITHOUT prompting to uninstall or install any agents.
 
-`RunSelection` SHALL return `nil, nil` when the user quits and `[]string{}, nil` when the user confirms an empty selection with Enter. The `runAddFlowInteractive` function MUST distinguish these cases:
+`RunSelection` SHALL return `nil, nil, nil` when the user quits, `[]string{}, nil, nil` when the user confirms an empty selection with Enter, and `[ids...], choices, nil` when the uninstall wizard was used. The `runAddFlowInteractive` function MUST distinguish these cases:
 - `nil` → user quit, return `cfg, nil` immediately
-- `[]string{}` (non-nil empty slice) → user confirmed nothing selected, proceed to uninstall/restart logic
-- non-empty slice → proceed to installation
+- `[]string{}` (non-nil empty slice) → user confirmed nothing selected, proceed to check wizard flow
+- non-empty slice → proceed to check wizard flow or installation
+
+(Previously: `RunSelection` returned `([]string, error)` without wizard choices.)
 
 #### Scenario: User presses q and exits cleanly
 
@@ -142,108 +160,108 @@ When the user quits the TUI (via `q`, `Ctrl+C`, or `Escape`), the system MUST ex
 #### Scenario: User confirms empty selection (Enter with nothing checked)
 
 - GIVEN the TUI is open with no agents checked
-- WHEN the user presses `Enter`
+- WHEN the user presses `Enter` on Apply
+- THEN the "No changes" dialog appears
+- WHEN the user presses Enter again to dismiss
 - THEN the system prints "No agents selected. Nothing to install."
 - AND the command returns cleanly
 
-### Requirement: 3-Option Uninstall Prompt
+### Requirement: Uninstall Wizard via TUI
 
-When a user deselects an installed agent after confirming a selection with Enter in the interactive TUI flow (`runAddFlowInteractive`), the system SHALL handle the deselection as follows:
+When a user deselects an installed agent (PreChecked → unchecked) and presses Apply, the TUI SHALL enter an inline uninstall wizard mode instead of submitting immediately.
 
-(Previously: applied to any RunSelection return value, including nil/quit. The nil/quit case is now handled by the TUI Quit Clean Exit requirement.)
+The wizard SHALL display a step-by-step interface for each deselected installed agent:
+- Title: "Step X of Y — Agent Name"
+- Text: "This agent is currently installed. Choose an action:"
+- Radio buttons: "Uninstall app only", "Uninstall app + config data", "Keep installed (skip)"
 
-- If **only one** installed agent was deselected, the system SHALL display the existing 3-option prompt (Uninstall app only / Uninstall app + config data / Cancel).
-- If **multiple** installed agents were deselected simultaneously, the system SHALL display a SINGLE combined confirmation prompt listing ALL deselected installed agent names.
+Navigation inside the wizard:
+- `↑`/`↓` and `j`/`k` SHALL navigate between radio options
+- `enter` SHALL confirm the selection for the current step
+- `n` SHALL advance to the next step (only when current step has a confirmed choice)
+- `b` SHALL return to the previous step
+- `q` SHALL cancel the wizard and return to the agent list view
 
-The combined prompt SHALL use `confirmFn` with a message like: `"Some selected agents are already installed: Claude Code, OpenCode. Uninstall them as well? [y/N]"`.
+After all wizard steps complete, the agent list view SHALL re-appear with the Apply item at the bottom. The user SHALL press Apply again to submit both the selected agent IDs and the wizard choices.
 
-When the combined prompt is confirmed (y/yes), the system SHALL uninstall ALL listed agents using `UninstallAgent` (app-only) and SHALL restart the TUI selection loop with the updated installed state. When declined, the system SHALL keep all agents in the `installed` map and SHALL restart the TUI selection loop.
+Choices collected by the wizard:
+- 0 (Uninstall app only) → `UninstallAgent` is called
+- 1 (Uninstall app + config data) → `UninstallAgent` AND `UninstallConfig` are called
+- 2 (Keep installed / skip) → no uninstall is performed
 
-The per-agent 3-option prompt SHALL remain unchanged with options:
-1. **"Uninstall app only"** — calls `UninstallAgent`, then restarts the TUI selection loop
-2. **"Uninstall app + config data"** — calls `UninstallAgent` AND `UninstallConfig`, then restarts the TUI selection loop
-3. **"Cancel"** — restarts the TUI selection flow with the cancelled agent restored (no uninstall executed)
+When the Apply is pressed after wizard completion, the TUI SHALL return the wizard choices alongside the selected IDs.
 
-After ANY uninstall decision (option 1, 2, 3, or bulk confirm/decline), the system SHALL:
-- Rebuild the agent selection items using `buildAgentItemsForAdd` with the updated installed map
-- Re-launch the Bubbletea TUI for re-selection
-- Agents that were uninstalled SHALL NOT appear pre-checked in the re-launched TUI
-- Agents that were cancelled (not uninstalled) SHALL remain pre-checked
+The `runAddFlowInteractive` function SHALL process wizard choices by calling `UninstallAgent` and/or `UninstallConfig` for each agent based on the choice value. After processing uninstalls, the function SHALL rebuild agent items with the updated installed state and re-launch the TUI.
 
-If NO installed agents were deselected, the system SHALL skip the uninstall prompt entirely and proceed directly to installation.
+If no uninstalls were performed (all choices were "skip"), the flow SHALL proceed directly to installation.
 
-(Previously: Each deselected installed agent always prompted individually with the 3-option menu; no bulk combined prompt existed)
+(Previously: The 3-option stdin prompt (`defaultUninstallChoiceFn`) and bulk confirmation prompt (`confirmFn`) were used instead of the inline wizard.)
 
-#### Scenario: Multiple installed agents deselected, user confirms bulk uninstall
-
-- GIVEN two installed agents (Claude Code, OpenCode) are both deselected in the TUI
-- WHEN the user submits the selection
-- THEN a single combined prompt SHALL appear listing both names
-- WHEN the user types "y"
-- THEN `UninstallAgent` SHALL be called for both agents
-- AND the TUI SHALL re-launch with both agents no longer pre-checked
-
-#### Scenario: Multiple installed agents deselected, user declines bulk uninstall
-
-- GIVEN two installed agents (Claude Code, OpenCode) are both deselected in the TUI
-- WHEN the user submits the selection
-- THEN a single combined prompt SHALL appear listing both names
-- WHEN the user types "n"
-- THEN no uninstall SHALL be called for either agent
-- AND the TUI SHALL re-launch with both agents pre-checked
-
-#### Scenario: Single installed agent deselected, existing 3-option prompt appears
-
-- GIVEN one installed agent (Claude Code) is deselected in the TUI
-- WHEN the user submits the selection
-- THEN the existing 3-option per-agent prompt SHALL appear
-- AND the flow proceeds according to the existing behavior
-
-#### Scenario: User chooses Cancel, TUI re-launches
+#### Scenario: Wizard opens for deselected installed agents
 
 - GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 3 at the prompt
+- WHEN the user presses Enter on Apply
+- THEN the agent list is replaced by the wizard view
+- AND the wizard shows "Step 1 of 1 — Agent Name"
+
+#### Scenario: Wizard navigation with j/k
+
+- GIVEN the wizard is open with 3 options
+- WHEN the user presses `j`
+- THEN the cursor moves down (wraps at end)
+- WHEN the user presses `k`
+- THEN the cursor moves up (wraps at start)
+
+#### Scenario: Enter selects option
+
+- GIVEN the wizard is open
+- WHEN the user presses Enter
+- THEN the current option is stored in `choices`
+- AND the option shows as selected
+
+#### Scenario: n advances to next step
+
+- GIVEN the wizard has multiple agents
+- WHEN the user presses `n`
+- THEN the step index advances
+
+#### Scenario: b goes to previous step
+
+- GIVEN the wizard is on step 2 of 3
+- WHEN the user presses `b`
+- THEN the step index goes back to 1
+
+#### Scenario: q cancels wizard
+
+- GIVEN the wizard is open
+- WHEN the user presses `q`
+- THEN `wizard` is set to nil
+- AND the agent list view is restored
+
+#### Scenario: Wizard completes and returns choices
+
+- GIVEN the wizard completes all steps
+- WHEN Apply is pressed again
+- THEN `RunSelection` returns the wizard choices alongside selected IDs
+
+#### Scenario: Uninstall after wizard choice app-only
+
+- GIVEN the wizard completes with choice 0 for an agent
+- WHEN the Apply action processes the wizard choices
+- THEN `UninstallAgent` is called with that agent
+
+#### Scenario: Uninstall after wizard choice app+config
+
+- GIVEN the wizard completes with choice 1 for an agent
+- WHEN the Apply action processes the wizard choices
+- THEN `UninstallAgent` AND `UninstallConfig` are called
+
+#### Scenario: Skip keeps agent installed
+
+- GIVEN the wizard completes with choice 2 for an agent
+- WHEN the Apply action processes the wizard choices
 - THEN neither `UninstallAgent` nor `UninstallConfig` is called
-- AND the TUI SHALL re-launch with the cancelled agent pre-checked
-
-#### Scenario: User cancels one, confirms another, TUI re-launches correctly
-
-- GIVEN two installed agents (A and B) are both deselected in the TUI
-- WHEN the user selects option 1 for agent A and option 3 for agent B
-- THEN agent A is uninstalled
-- AND agent B is NOT uninstalled
-- AND the TUI SHALL re-launch with agent B pre-checked and agent A NOT pre-checked
-
-#### Scenario: User chooses Cancel, then confirms on re-launch
-
-- GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 3 (Cancel) at the prompt
-- AND the TUI re-launches
-- AND the user deselects the same agent again
-- AND the user selects option 1 (Uninstall app only) at the prompt
-- THEN the agent IS uninstalled
-- AND the TUI SHALL re-launch with the agent no longer pre-checked
-
-#### Scenario: Uninstall app only/app+config restarts TUI
-
-- GIVEN an installed agent is deselected in the TUI
-- WHEN the user selects option 1 or 2 at the prompt
-- THEN the agent IS uninstalled
-- AND the TUI SHALL re-launch with the agent no longer pre-checked
-
-#### Scenario: Invalid input re-prompts
-
-- GIVEN the 3-option prompt is displayed
-- WHEN the user enters "4" or "abc"
-- THEN the prompt SHALL display an error message
-- AND re-display the 3 options
-
-#### Scenario: nil (quit) does not trigger uninstall prompt
-
-- GIVEN the TUI is open with an installed agent deselected
-- WHEN the user presses `q` instead of `Enter`
-- THEN the uninstall prompt SHALL NOT appear
-- AND the command exits cleanly
+- AND the agent stays in the installed map
 
 ### Requirement: Registry Fetch Failure
 

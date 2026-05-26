@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/alebak/squad-ai/internal/config"
@@ -64,15 +62,6 @@ func isTerminal() bool {
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
-// uninstallChoice represents the user's choice in the 3-option uninstall prompt.
-type uninstallChoice int
-
-const (
-	uninstallAppOnly   uninstallChoice = 1
-	uninstallAppConfig uninstallChoice = 2
-	uninstallCancel    uninstallChoice = 3
-)
-
 // addHandler holds injectable functions for the add command.
 type addHandler struct {
 	registryURL       string
@@ -80,12 +69,10 @@ type addHandler struct {
 	fetchRegistry     func(ctx context.Context, url string) (*registry.Catalog, error)
 	detectAll         func(agents []registry.Agent) map[string]bool
 	installAll        func(agents []registry.Agent, progress installer.ProgressFn) []error
-	runSelection      func(items []tui.AgentItem) ([]string, error)
+	runSelection      func(items []tui.AgentItem) ([]string, map[string]int, error)
 	isRuntimeMet      func(deps []registry.RuntimeDep) bool
 	uninstallAgent    func(agent registry.Agent) error
 	uninstallConfig   func(agent registry.Agent) error
-	uninstallChoiceFn func(agentName string) uninstallChoice
-	confirmFn         func(msg string) bool
 	configPath        func() (string, error)
 	isTerminal        func() bool
 }
@@ -93,19 +80,17 @@ type addHandler struct {
 // defaultAddHandler returns an addHandler wired to real implementations.
 func defaultAddHandler() *addHandler {
 	return &addHandler{
-		registryURL:       "https://raw.githubusercontent.com/alebak/squad-ai/main/registry/agents.json",
-		loadConfig:        config.Load,
-		fetchRegistry:     registry.Fetch,
-		detectAll:         installer.DetectAll,
-		installAll:        installer.InstallAll,
-		runSelection:      tui.RunSelection,
-		isRuntimeMet:      defaultIsRuntimeMet,
-		uninstallAgent:    installer.UninstallAgent,
-		uninstallConfig:   installer.UninstallConfig,
-		uninstallChoiceFn: defaultUninstallChoiceFn,
-		confirmFn:         confirmAction,
-		configPath:        config.ConfigPath,
-		isTerminal:        isTerminal,
+		registryURL:     "https://raw.githubusercontent.com/alebak/squad-ai/main/registry/agents.json",
+		loadConfig:      config.Load,
+		fetchRegistry:   registry.Fetch,
+		detectAll:       installer.DetectAll,
+		installAll:      installer.InstallAll,
+		runSelection:    tui.RunSelection,
+		isRuntimeMet:    defaultIsRuntimeMet,
+		uninstallAgent:  installer.UninstallAgent,
+		uninstallConfig: installer.UninstallConfig,
+		configPath:      config.ConfigPath,
+		isTerminal:      isTerminal,
 	}
 }
 
@@ -135,7 +120,7 @@ func runAddFlow(h *addHandler, cmd *cobra.Command) (*config.Config, error) {
 		return cfg, nil
 	}
 
-	// Detect installed agents early — needed for pre-checked rendering and uninstall prompt.
+	// Detect installed agents early — needed for pre-checked rendering and uninstall handling.
 	installed := h.detectAll(catalog.Agents)
 
 	agentItems := buildAgentItemsForAdd(h, catalog, installed)
@@ -193,158 +178,80 @@ func runAddFlowNonInteractive(h *addHandler, cmd *cobra.Command, agentItems []tu
 	return cfg, nil
 }
 
-// defaultUninstallChoiceFn reads a 3-option uninstall choice from stdin.
+// runAddFlowInteractive launches the TUI for agent selection, processes the
+// uninstall wizard if installed agents were deselected, installs the chosen
+// agents, and saves the updated config.
 //
-// Options:
-//
-//	1 — Uninstall app only
-//	2 — Uninstall app + config data
-//	3 — Cancel (keep agent installed)
-//
-// Invalid input re-prompts until a valid choice is made.
-func defaultUninstallChoiceFn(agentName string) uninstallChoice {
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Printf("\nUninstall %s?\n", agentName)
-		fmt.Println("1) Uninstall app only")
-		fmt.Println("2) Uninstall app + config data")
-		fmt.Println("3) Cancel")
-		fmt.Print("Choose (1-3): ")
-
-		if !scanner.Scan() {
-			// EOF or error — treat as cancel.
-			return uninstallCancel
-		}
-
-		input := strings.TrimSpace(scanner.Text())
-		choice, err := strconv.Atoi(input)
-		if err != nil || choice < 1 || choice > 3 {
-			fmt.Println("Invalid choice. Please enter 1, 2, or 3.")
-			continue
-		}
-		return uninstallChoice(choice)
-	}
-}
-
-// runAddFlowInteractive launches the TUI for agent selection, installs the
-// chosen agents, prompts to uninstall deselected installed agents,
-// and saves the updated config.
 // installed is pre-computed by runAddFlow to enable pre-checked rendering.
-// The TUI selection + uninstall prompt loop restarts when the user chooses
-// Cancel, re-launching the TUI with the latest installed state.
+// The TUI loop restarts when wizard choices result in uninstalls, so the
+// user sees the updated agent state.
 func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.AgentItem, catalog *registry.Catalog, cfg *config.Config, cfgPath string, installed map[string]bool) (*config.Config, error) {
-
 	var selectedIDs []string
 	for {
+		var wizardChoices map[string]int
 		var err error
-		selectedIDs, err = h.runSelection(agentItems)
+		selectedIDs, wizardChoices, err = h.runSelection(agentItems)
 		if err != nil {
 			return nil, fmt.Errorf("TUI selection failed: %w", err)
 		}
 
-		// nil means the user quit (q, Ctrl+C, Escape) — exit cleanly without
-		// prompting to uninstall or install anything.
-		// An empty (but non-nil) slice means the user pressed Enter with
-		// nothing checked — that is a confirmed selection with no agents.
+		// nil means the user quit (q, Ctrl+C, Escape) — exit cleanly.
 		if selectedIDs == nil {
 			return cfg, nil
 		}
 
-		// Collect deselected installed agents BEFORE the empty-check so that
-		// the "unselect all" case (selectedIDs is empty but installed agents
-		// were deselected) is handled with a confirmation prompt.
-		selectedSet := make(map[string]bool, len(selectedIDs))
-		for _, id := range selectedIDs {
-			selectedSet[id] = true
-		}
-
-		var deselected []registry.Agent
-		for _, agent := range catalog.Agents {
-			if installed[agent.ID] && !selectedSet[agent.ID] {
-				deselected = append(deselected, agent)
-			}
-		}
-
-		if len(selectedIDs) == 0 && len(deselected) == 0 {
-			cmd.Println("No agents selected. Nothing to install.")
-			return cfg, nil
-		}
-
-		if len(deselected) == 0 {
-			// No installed agents deselected — proceed to installation.
-			break
-		}
-
-		var needsRestart bool
-		if len(deselected) == 1 {
-			// Single agent — existing per-agent 3-option flow.
-			agent := deselected[0]
-			choice := h.uninstallChoiceFn(agent.Name)
-			switch choice {
-			case uninstallAppOnly:
-				if err := h.uninstallAgent(agent); err != nil {
-					cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
-				} else {
-					cmd.Printf("Uninstalled %s\n", agent.Name)
-					delete(installed, agent.ID)
+		// Process wizard choices from the inline uninstall wizard.
+		// wizardChoices is non-nil when the user deselected installed agents
+		// and completed the wizard in the TUI.
+		if len(wizardChoices) > 0 {
+			restart := false
+			for _, agent := range catalog.Agents {
+				choice, ok := wizardChoices[agent.ID]
+				if !ok {
+					continue
 				}
-				// Restart the TUI loop so the user sees the updated state and can
-				// continue managing agents.
-				needsRestart = true
-			case uninstallAppConfig:
-				if err := h.uninstallAgent(agent); err != nil {
-					cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
-				} else {
-					cmd.Printf("Uninstalled %s (app)\n", agent.Name)
-					delete(installed, agent.ID)
-				}
-				if err := h.uninstallConfig(agent); err != nil {
-					cmd.Printf("Warning: failed to clean config for %s: %v\n", agent.Name, err)
-				} else {
-					cmd.Printf("Cleaned config for %s\n", agent.Name)
-				}
-				// Restart the TUI loop so the user sees the updated state and can
-				// continue managing agents.
-				needsRestart = true
-			case uninstallCancel:
-				// Cancel — re-launch TUI so the user can continue editing.
-				// The agent stays in the installed map, so it will be
-				// pre-checked when the TUI re-launches.
-				needsRestart = true
-			}
-		} else {
-			// Multiple agents — combined confirmation prompt.
-			names := make([]string, len(deselected))
-			for i, a := range deselected {
-				names[i] = a.Name
-			}
-			msg := fmt.Sprintf("Some selected agents are already installed: %s. Uninstall them as well?", strings.Join(names, ", "))
-			if h.confirmFn(msg) {
-				for _, agent := range deselected {
+				switch choice {
+				case 0: // Uninstall app only
 					if err := h.uninstallAgent(agent); err != nil {
 						cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
 					} else {
 						cmd.Printf("Uninstalled %s\n", agent.Name)
 						delete(installed, agent.ID)
+						restart = true
 					}
+				case 1: // Uninstall app + config data
+					if err := h.uninstallAgent(agent); err != nil {
+						cmd.Printf("Warning: failed to uninstall %s: %v\n", agent.Name, err)
+					} else {
+						cmd.Printf("Uninstalled %s (app)\n", agent.Name)
+						delete(installed, agent.ID)
+						restart = true
+					}
+					if err := h.uninstallConfig(agent); err != nil {
+						cmd.Printf("Warning: failed to clean config for %s: %v\n", agent.Name, err)
+					} else {
+						cmd.Printf("Cleaned config for %s\n", agent.Name)
+					}
+				case 2: // Keep installed (skip)
+					// No action — agent stays installed
 				}
-				// Restart the TUI loop so the user sees the updated state.
-				needsRestart = true
-			} else {
-				needsRestart = true
 			}
+			if restart {
+				// Rebuild agent selection items with updated installed state
+				// and re-launch the TUI.
+				agentItems = buildAgentItemsForAdd(h, catalog, installed)
+				continue
+			}
+			// If no uninstalls happened (all skips), proceed to installation.
 		}
 
-		if needsRestart {
-			// Rebuild agent selection items with updated installed state
-			// and re-launch the TUI.
-			agentItems = buildAgentItemsForAdd(h, catalog, installed)
-			continue
+		// No wizard or all skips — proceed with installation.
+		if len(selectedIDs) == 0 {
+			cmd.Println("No agents selected. Nothing to install.")
+			return cfg, nil
 		}
-
-		// No cancels — proceed to installation.
 		break
-	}
+	} // end for
 
 	toInstall := findAgentsByIDs(catalog, selectedIDs)
 	toInstall = filterInstalled(h, toInstall)
