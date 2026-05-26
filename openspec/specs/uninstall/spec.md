@@ -6,6 +6,16 @@ The uninstall domain manages agent removal from the system. It supports two inde
 
 ## Requirements
 
+### Requirement: Uninstall Choices via Wizard
+
+When installed agents are deselected in the `squad add` TUI, the uninstall choices SHALL be collected via the inline wizard. The wizard SHALL present three options per agent:
+
+- 0 (Uninstall app only) — calls `UninstallAgent`
+- 1 (Uninstall app + config data) — calls `UninstallAgent` AND `UninstallConfig`
+- 2 (Keep installed / skip) — no action taken
+
+(Previously: choices were collected via stdin 3-option prompt (`defaultUninstallChoiceFn`) or bulk confirmation prompt (`confirmFn`).)
+
 ### Requirement: UninstallAgent
 
 The system SHALL support agent binary removal via `UninstallAgent(agent registry.Agent) error`. Resolution order:
