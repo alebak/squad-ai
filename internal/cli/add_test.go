@@ -159,6 +159,7 @@ func TestAddCommand_TUISuccessFlow(t *testing.T) {
 	buf := new(bytes.Buffer)
 
 	var installedIDs []string
+	var callCount int
 	h := &addHandler{
 		registryURL: "",
 		loadConfig: func(path string) (*config.Config, error) {
@@ -180,7 +181,12 @@ func TestAddCommand_TUISuccessFlow(t *testing.T) {
 			return []error{nil, nil}
 		},
 		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
-			return []string{"claude-code", "opencode"}, nil, nil
+			callCount++
+			if callCount == 1 {
+				return []string{"claude-code", "opencode"}, nil, nil
+			}
+			// Second call: TUI was relaunched after install; user quits.
+			return nil, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error { return nil },
@@ -195,6 +201,7 @@ func TestAddCommand_TUISuccessFlow(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 
+	assert.Equal(t, 2, callCount, "TUI should be relaunched after install")
 	output := buf.String()
 	assert.Contains(t, output, "Installing selected agents")
 	assert.Contains(t, output, "Claude Code installed")
@@ -262,8 +269,12 @@ func TestAddCommand_UninstallViaWizardAppOnly(t *testing.T) {
 				// First TUI: wizard completed with choice 0 for claude-code
 				return []string{"opencode"}, map[string]int{"claude-code": 0}, nil
 			}
-			// Second TUI after restart: claude-code is uninstalled, user selects opencode
-			return []string{"opencode"}, nil, nil
+			if callCount == 2 {
+				// Second TUI after uninstall restart: user selects opencode
+				return []string{"opencode"}, nil, nil
+			}
+			// Third call: TUI relaunched after install; user quits.
+			return nil, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -285,6 +296,7 @@ func TestAddCommand_UninstallViaWizardAppOnly(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 
+	assert.Equal(t, 3, callCount, "TUI should relaunch after uninstall and again after install")
 	assert.Equal(t, "claude-code", uninstalledAgent)
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code")
 }
@@ -314,7 +326,10 @@ func TestAddCommand_UninstallViaWizardAppAndConfig(t *testing.T) {
 			if callCount == 1 {
 				return []string{"opencode"}, map[string]int{"claude-code": 1}, nil
 			}
-			return []string{"opencode"}, nil, nil
+			if callCount == 2 {
+				return []string{"opencode"}, nil, nil
+			}
+			return nil, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -336,6 +351,7 @@ func TestAddCommand_UninstallViaWizardAppAndConfig(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 
+	assert.Equal(t, 3, callCount, "TUI should relaunch after uninstall and again after install")
 	assert.Equal(t, "claude-code", uninstalledAgent)
 	assert.Equal(t, "claude-code", configCleanedAgent)
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code (app)")
@@ -415,8 +431,12 @@ func TestAddCommand_WizardRestartsTUIAfterUninstall(t *testing.T) {
 				// First TUI: wizard completed with choice 0 for claude-code
 				return []string{"opencode"}, map[string]int{"claude-code": 0}, nil
 			}
-			// Second TUI after restart: claude-code was uninstalled, user selects both
-			return []string{"opencode", "claude-code"}, nil, nil
+			if runSelectionCallCount == 2 {
+				// Second TUI after uninstall restart: user selects both
+				return []string{"opencode", "claude-code"}, nil, nil
+			}
+			// Third call: TUI relaunched after install; user quits.
+			return nil, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error {
@@ -439,9 +459,58 @@ func TestAddCommand_WizardRestartsTUIAfterUninstall(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "claude-code", uninstalledAgent)
-	// TUI should have been re-launched after wizard uninstall
-	assert.Equal(t, 2, runSelectionCallCount, "TUI should re-launch after wizard uninstall")
+	// TUI should have been re-launched after wizard uninstall AND after install
+	assert.Equal(t, 3, runSelectionCallCount, "TUI should re-launch after wizard uninstall and again after install")
 	assert.Contains(t, buf.String(), "Uninstalled Claude Code")
+}
+
+func TestAddCommand_TUIRelaunchAfterInstall(t *testing.T) {
+	buf := new(bytes.Buffer)
+	var callCount int
+	var installedIDs []string
+
+	h := &addHandler{
+		registryURL: "",
+		loadConfig: func(path string) (*config.Config, error) {
+			return config.DefaultConfig(), nil
+		},
+		fetchRegistry: func(ctx context.Context, url string) (*registry.Catalog, error) {
+			return testRegistry(), nil
+		},
+		detectAll: func(agents []registry.Agent) map[string]bool {
+			return map[string]bool{}
+		},
+		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
+			for _, a := range agents {
+				installedIDs = append(installedIDs, a.ID)
+			}
+			return []error{nil}
+		},
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
+			callCount++
+			if callCount == 1 {
+				// First TUI: user selects claude-code
+				return []string{"claude-code"}, nil, nil
+			}
+			// Second TUI after install relaunch: user quits
+			return nil, nil, nil
+		},
+		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
+		uninstallAgent: func(agent registry.Agent) error { return nil },
+		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
+		isTerminal:     func() bool { return true },
+	}
+
+	cmd := newAddCommandWithHandler(h)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, callCount, "TUI should be relaunched once after install, then user quits")
+	assert.Equal(t, []string{"claude-code"}, installedIDs)
+	assert.Contains(t, buf.String(), "Installing selected agents")
 }
 
 func TestAddCommand_BlockedAgentsShownInTTYFallback(t *testing.T) {
