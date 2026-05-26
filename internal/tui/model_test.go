@@ -45,7 +45,7 @@ func agentsForWizard() []AgentItem {
 }
 
 func TestModel_InitialState(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	assert.Equal(t, 0, m.cursor, "cursor starts at 0")
 	assert.True(t, m.agents[0].IsSelectAll, "first agent is select-all sentinel")
@@ -70,7 +70,7 @@ func TestModel_InitialState(t *testing.T) {
 }
 
 func TestModel_CursorDown(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	assert.Equal(t, 0, m.cursor, "starts at select-all row")
 	m = updateModel(m, "j")
@@ -81,7 +81,7 @@ func TestModel_CursorDown(t *testing.T) {
 }
 
 func TestModel_CursorDownWraps(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	for range m.agents {
 		m = updateModel(m, "j")
@@ -90,7 +90,7 @@ func TestModel_CursorDownWraps(t *testing.T) {
 }
 
 func TestModel_CursorUp(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Up from select-all row wraps to last
 	m = updateModel(m, "k")
@@ -101,7 +101,7 @@ func TestModel_CursorUp(t *testing.T) {
 }
 
 func TestModel_CursorArrows(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Up arrow wraps to last
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -113,7 +113,7 @@ func TestModel_CursorArrows(t *testing.T) {
 }
 
 func TestModel_ToggleCheck(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	assert.True(t, m.checked[4], "aider starts checked (PreChecked)")
 
 	// Navigate to aider (index 4)
@@ -132,7 +132,7 @@ func TestModel_ToggleCheck(t *testing.T) {
 }
 
 func TestModel_BlockedAgentNoToggle(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Navigate to codex (index 3, blocked)
 	for range 3 {
@@ -157,7 +157,7 @@ func TestModel_EnterOnApplyConfirms(t *testing.T) {
 		{ID: "codex", Name: "Codex CLI", Blocked: true, BlockReason: "requires Node.js 22+"},
 		{ID: "aider", Name: "Aider", Blocked: false},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	// Check opencode (index 2, not PreChecked)
 	m = updateModel(m, "j") // index 1 (claude-code, PreChecked)
@@ -176,7 +176,7 @@ func TestModel_EnterOnApplyConfirms(t *testing.T) {
 }
 
 func TestModel_EnterOnApplyReturnsSelection(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// claude-code (index 1) starts PreChecked — uncheck it
 	m = updateModel(m, "j")
@@ -199,46 +199,46 @@ func TestModel_EnterOnApplyReturnsSelection(t *testing.T) {
 }
 
 func TestModel_CtrlCQuits(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	assert.False(t, mResult.(model).isSubmitted)
 }
 
 func TestModel_EscapeQuits(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	assert.False(t, mResult.(model).isSubmitted)
 }
 
 func TestModel_QQuits(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	m = updateModel(m, "q")
 	assert.False(t, m.isSubmitted)
 }
 
 func TestModel_EmptyAgents(t *testing.T) {
-	ids, choices, err := RunSelection(nil)
+	ids, choices, err := RunSelection(nil, "0.1.0")
 	assert.Nil(t, err)
 	assert.Nil(t, ids)
 	assert.Nil(t, choices)
 
-	ids, choices, err = RunSelection([]AgentItem{})
+	ids, choices, err = RunSelection([]AgentItem{}, "0.1.0")
 	assert.Nil(t, err)
 	assert.Nil(t, ids)
 	assert.Nil(t, choices)
 }
 
 func TestModel_ViewRenders(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 	m.width = 60
 
 	view := m.View()
 	assert.Contains(t, view, "Squad AI")
-	assert.Contains(t, view, "version 0.15.0")
+	assert.Contains(t, view, "version 0.1.0")
 	assert.Contains(t, view, "Select Your AI Coding Agents")
 	assert.Contains(t, view, "select all")
 	assert.Contains(t, view, "Claude Code")
@@ -258,7 +258,7 @@ func TestModel_ViewRenders(t *testing.T) {
 }
 
 func TestModel_NotReady(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = false
 
 	view := m.View()
@@ -266,7 +266,7 @@ func TestModel_NotReady(t *testing.T) {
 }
 
 func TestModel_InstalledAgentToggleable(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Navigate to opencode (index 2)
 	for range 2 {
@@ -286,7 +286,7 @@ func TestModel_InstalledAgentToggleable(t *testing.T) {
 }
 
 func TestModel_ToggleAll(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// toggleAll via Space on select-all row (index 0)
 	m = updateModelKey(m, tea.KeySpace)
@@ -298,7 +298,7 @@ func TestModel_ToggleAll(t *testing.T) {
 }
 
 func TestModel_ToggleAllDeselect(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// First check all via Space on select-all
 	m = updateModelKey(m, tea.KeySpace)
@@ -314,7 +314,7 @@ func TestModel_ToggleAllDeselect(t *testing.T) {
 }
 
 func TestModel_SelectAllRowToggle(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Space on select-all row should toggle all compatible
 	m = updateModelKey(m, tea.KeySpace)
@@ -333,7 +333,7 @@ func TestModel_SelectAllRowToggle(t *testing.T) {
 }
 
 func TestModel_SelectAllDynamicLabel(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 
 	// Initially: claude-code and aider checked, opencode unchecked
@@ -358,7 +358,7 @@ func TestModel_SelectAllDynamicLabel(t *testing.T) {
 }
 
 func TestModel_BlankLineAfterSelectAll(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 	m.width = 60
 
@@ -381,7 +381,7 @@ func TestModel_BlankLineAfterSelectAll(t *testing.T) {
 }
 
 func TestModel_PreCheckedSetsInitialState(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// claude-code (index 1) and aider (index 4) have PreChecked=true
 	assert.True(t, m.checked[1], "claude-code should start checked")
@@ -399,13 +399,13 @@ func TestModel_PreCheckedBlockedNotChecked(t *testing.T) {
 		{Name: "select all", IsSelectAll: true},
 		{ID: "blocked-but-installed", Name: "Blocked But Installed", Blocked: true, PreChecked: true, BlockReason: "requires Node.js"},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	assert.False(t, m.checked[1], "blocked agent should not be checked")
 }
 
 func TestModel_PreCheckedToggleWorks(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// claude-code (index 1) starts PreChecked — toggle should uncheck
 	m = updateModel(m, "j") // cursor 1
@@ -418,7 +418,7 @@ func TestModel_PreCheckedToggleWorks(t *testing.T) {
 }
 
 func TestModel_BlockedAgentNoEmoji(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 
 	view := m.View()
@@ -427,7 +427,7 @@ func TestModel_BlockedAgentNoEmoji(t *testing.T) {
 }
 
 func TestModel_NoEmojiInView(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 
 	view := m.View()
@@ -437,7 +437,7 @@ func TestModel_NoEmojiInView(t *testing.T) {
 }
 
 func TestModel_EnterTogglesAgent(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Navigate to claude-code (index 1, PreChecked)
 	m = updateModel(m, "j")
@@ -453,7 +453,7 @@ func TestModel_EnterTogglesAgent(t *testing.T) {
 }
 
 func TestModel_ApplyItemRenders(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 	m.width = 60
 
@@ -465,7 +465,7 @@ func TestModel_ApplyItemRenders(t *testing.T) {
 }
 
 func TestModel_AKeySubmits(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Press 'a' — should submit (not toggle all)
 	m = updateModel(m, "a")
@@ -478,7 +478,7 @@ func TestModel_NoChangesDialog(t *testing.T) {
 		{Name: "select all", IsSelectAll: true},
 		{ID: "opencode", Name: "OpenCode", Blocked: false},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	// Navigate to Apply and press Enter — nothing selected
 	m = updateModel(m, "j") // move to opencode
@@ -495,7 +495,7 @@ func TestModel_NoChangesDismiss(t *testing.T) {
 		{Name: "select all", IsSelectAll: true},
 		{ID: "opencode", Name: "OpenCode", Blocked: false},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	// Trigger dialog
 	m = updateModel(m, "j")
@@ -515,7 +515,7 @@ func TestModel_NoChangesDialogViaAKey(t *testing.T) {
 		{Name: "select all", IsSelectAll: true},
 		{ID: "opencode", Name: "OpenCode", Blocked: false},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	// Press 'a' with nothing selected — should show dialog
 	m = updateModel(m, "a")
@@ -524,7 +524,7 @@ func TestModel_NoChangesDialogViaAKey(t *testing.T) {
 }
 
 func TestModel_WizardInit(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code (index 1, PreChecked) and opencode (index 2, PreChecked)
 	m = updateModel(m, "j") // index 1
@@ -545,7 +545,7 @@ func TestModel_WizardInit(t *testing.T) {
 }
 
 func TestModel_WizardNavigationJK(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode
 	m = updateModel(m, "j")
@@ -585,7 +585,7 @@ func TestModel_WizardNavigationJK(t *testing.T) {
 }
 
 func TestModel_WizardEnterSelectsAndAutoAdvances(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode — need 2 agents to test multi-step
 	m = updateModel(m, "j")
@@ -621,7 +621,7 @@ func TestModel_WizardEnterSelectsAndAutoAdvances(t *testing.T) {
 }
 
 func TestModel_WizardNextBack(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode
 	m = updateModel(m, "j")
@@ -659,7 +659,7 @@ func TestModel_WizardNextBack(t *testing.T) {
 }
 
 func TestModel_WizardCancel(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")
@@ -680,7 +680,7 @@ func TestModel_WizardCancel(t *testing.T) {
 }
 
 func TestModel_WizardCompleteThroughSummary(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code (index 1) — only 1 agent in wizard
 	m = updateModel(m, "j")
@@ -699,20 +699,20 @@ func TestModel_WizardCompleteThroughSummary(t *testing.T) {
 	assert.True(t, m.wizard.showingSummary, "should show summary after last step")
 	assert.NotNil(t, m.wizard, "wizard should still be active")
 
-	// Enter on Apply in summary view — completes wizard
-	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Enter on Apply in summary view — completes wizard and submits immediately
+	mResult, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 	assert.Nil(t, m.wizard, "wizard should be nil after summary Apply")
+	assert.True(t, m.isSubmitted, "should be submitted immediately after summary Apply")
 	assert.NotNil(t, m.wizardOut, "wizardOut should be populated")
 	assert.Equal(t, 0, m.wizardOut["claude-code"], "claude-code should have choice 0")
 
-	// Now pressing Apply should submit
-	m = updateModel(m, "a")
-	assert.True(t, m.isSubmitted, "should submit after wizard completion")
+	// Verify tea.Quit was returned
+	assert.NotNil(t, cmd, "should return tea.Quit command")
 }
 
 func TestModel_SelectedIDsExcludesApply(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// Select all compatible agents via Space on select-all
 	m = updateModelKey(m, tea.KeySpace)
@@ -722,7 +722,7 @@ func TestModel_SelectedIDsExcludesApply(t *testing.T) {
 }
 
 func TestModel_ToggleAllSkipsApply(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 
 	// toggleAll via Space on select-all
 	m = updateModelKey(m, tea.KeySpace)
@@ -741,7 +741,7 @@ func TestModel_ToggleAllSkipsApply(t *testing.T) {
 }
 
 func TestModel_ApplyItemCursorWrap(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	applyIdx := len(m.agents) - 1
 
 	// Navigate down to Apply
@@ -760,7 +760,7 @@ func TestModel_ApplyItemCursorWrap(t *testing.T) {
 }
 
 func TestModel_SeparatorRendering(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 	m.width = 60
 
@@ -769,17 +769,17 @@ func TestModel_SeparatorRendering(t *testing.T) {
 }
 
 func TestModel_HeaderShowsVersion(t *testing.T) {
-	m := newModel(testAgents())
+	m := 	newModel(testAgents(), "0.1.0")
 	m.isReady = true
 	m.width = 60
 
 	view := m.View()
 	assert.Contains(t, view, "Squad AI")
-	assert.Contains(t, view, "version 0.15.0")
+	assert.Contains(t, view, "version 0.1.0")
 }
 
 func TestModel_SelectedIDsAfterWizard(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := newModel(agentsForWizard(), "0.1.0")
 
 	// Keep claude-code checked. Deselect opencode (index 2, PreChecked).
 	m = updateModel(m, "j")
@@ -799,15 +799,12 @@ func TestModel_SelectedIDsAfterWizard(t *testing.T) {
 	m = mResult.(model)
 	assert.True(t, m.wizard.showingSummary, "should be on summary")
 
-	// Apply on summary completes wizard
+	// Apply on summary completes wizard and submits immediately
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 	assert.Nil(t, m.wizard)
+	assert.True(t, m.isSubmitted, "should be submitted immediately after summary Apply")
 	assert.Equal(t, 2, m.wizardOut["opencode"])
-
-	// Submit via 'a'
-	m = updateModel(m, "a")
-	assert.True(t, m.isSubmitted)
 	assert.ElementsMatch(t, []string{"claude-code"}, m.selectedIDs(),
 		"should only return claude-code (opencode was deselected)")
 }
@@ -817,7 +814,7 @@ func TestModel_DialogBlocksOtherKeys(t *testing.T) {
 		{Name: "select all", IsSelectAll: true},
 		{ID: "opencode", Name: "OpenCode", Blocked: false},
 	}
-	m := newModel(agents)
+	m := newModel(agents, "0.1.0")
 
 	// Trigger dialog
 	m = updateModel(m, "j")
@@ -842,7 +839,7 @@ func TestModel_DialogBlocksOtherKeys(t *testing.T) {
 // ──── Wizard Button Tests ─────────────────────────────────────────────────
 
 func TestModel_WizardButtonsRender(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")
@@ -862,7 +859,7 @@ func TestModel_WizardButtonsRender(t *testing.T) {
 }
 
 func TestModel_WizardCursorArrowKeys(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")
@@ -906,7 +903,7 @@ func TestModel_WizardCursorArrowKeys(t *testing.T) {
 }
 
 func TestModel_WizardEnterOnNextButton(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode (2 steps)
 	m = updateModel(m, "j")
@@ -942,7 +939,7 @@ func TestModel_WizardEnterOnNextButton(t *testing.T) {
 }
 
 func TestModel_WizardEnterOnBackButton(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode (2 steps)
 	m = updateModel(m, "j")
@@ -969,7 +966,7 @@ func TestModel_WizardEnterOnBackButton(t *testing.T) {
 }
 
 func TestModel_WizardBackDisabledAtStep0(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")
@@ -994,7 +991,7 @@ func TestModel_WizardBackDisabledAtStep0(t *testing.T) {
 // ──── Summary View Tests ──────────────────────────────────────────────────
 
 func TestModel_SummaryRenders(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode (2 steps)
 	m = updateModel(m, "j")
@@ -1031,8 +1028,8 @@ func TestModel_SummaryRenders(t *testing.T) {
 	assert.Contains(t, view, "[ ◄ Back ]", "Back button should appear")
 }
 
-func TestModel_SummaryApplyCompletesWizard(t *testing.T) {
-	m := newModel(agentsForWizard())
+func TestModel_SummaryApplySubmitsAndQuits(t *testing.T) {
+	m := newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")
@@ -1050,15 +1047,17 @@ func TestModel_SummaryApplyCompletesWizard(t *testing.T) {
 	m = mResult.(model)
 	assert.True(t, m.wizard.showingSummary)
 
-	// Enter on Apply (cursor=0 in summary) should complete wizard
-	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Enter on Apply (cursor=0 in summary) should complete and submit immediately
+	mResult, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 	assert.Nil(t, m.wizard, "wizard should be nil after Apply on summary")
+	assert.True(t, m.isSubmitted, "should be submitted immediately")
 	assert.NotNil(t, m.wizardOut, "wizardOut should be set")
+	assert.NotNil(t, cmd, "should return tea.Quit command")
 }
 
 func TestModel_SummaryBackReturnsToLastStep(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code and opencode (2 steps)
 	m = updateModel(m, "j")
@@ -1096,7 +1095,7 @@ func TestModel_SummaryBackReturnsToLastStep(t *testing.T) {
 }
 
 func TestModel_SummaryQQuits(t *testing.T) {
-	m := newModel(agentsForWizard())
+	m := 	newModel(agentsForWizard(), "0.1.0")
 
 	// Deselect claude-code
 	m = updateModel(m, "j")

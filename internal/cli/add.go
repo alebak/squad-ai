@@ -69,7 +69,7 @@ type addHandler struct {
 	fetchRegistry     func(ctx context.Context, url string) (*registry.Catalog, error)
 	detectAll         func(agents []registry.Agent) map[string]bool
 	installAll        func(agents []registry.Agent, progress installer.ProgressFn) []error
-	runSelection      func(items []tui.AgentItem) ([]string, map[string]int, error)
+	runSelection      func(items []tui.AgentItem, version string) ([]string, map[string]int, error)
 	isRuntimeMet      func(deps []registry.RuntimeDep) bool
 	uninstallAgent    func(agent registry.Agent) error
 	uninstallConfig   func(agent registry.Agent) error
@@ -190,7 +190,7 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 	for {
 		var wizardChoices map[string]int
 		var err error
-		selectedIDs, wizardChoices, err = h.runSelection(agentItems)
+		selectedIDs, wizardChoices, err = h.runSelection(agentItems, version)
 		if err != nil {
 			return nil, fmt.Errorf("TUI selection failed: %w", err)
 		}
