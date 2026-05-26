@@ -562,50 +562,62 @@ func TestModel_WizardNavigationJK(t *testing.T) {
 	assert.NotNil(t, m.wizard)
 	assert.Equal(t, 0, m.wizard.cursor, "cursor starts at option 0")
 
-	// j moves down
+	// j moves through 5 positions (0→1→2→3→4→0)
 	m = updateModel(m, "j")
 	assert.Equal(t, 1, m.wizard.cursor)
 
-	// j again moves to option 2
 	m = updateModel(m, "j")
 	assert.Equal(t, 2, m.wizard.cursor)
+
+	m = updateModel(m, "j")
+	assert.Equal(t, wizardBackIdx, m.wizard.cursor, "cursor at Back button after 3 j presses")
+
+	m = updateModel(m, "j")
+	assert.Equal(t, wizardNextIdx, m.wizard.cursor, "cursor at Next button after 4 j presses")
 
 	// j wraps to 0
 	m = updateModel(m, "j")
-	assert.Equal(t, 0, m.wizard.cursor)
+	assert.Equal(t, 0, m.wizard.cursor, "cursor wraps to radio 0")
 
-	// k wraps up to 2
+	// k wraps back to Next button
 	m = updateModel(m, "k")
-	assert.Equal(t, 2, m.wizard.cursor)
+	assert.Equal(t, wizardNextIdx, m.wizard.cursor, "k from radio 0 wraps to Next")
 }
 
-func TestModel_WizardEnterSelects(t *testing.T) {
+func TestModel_WizardEnterSelectsAndAutoAdvances(t *testing.T) {
 	m := newModel(agentsForWizard())
 
-	// Deselect claude-code only
+	// Deselect claude-code and opencode — need 2 agents to test multi-step
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
 	m = updateModel(m, "j")
 	m = updateModelKey(m, tea.KeySpace)
 
-	// Start wizard
-	m = updateModel(m, "j")
+	// Start wizard (2 steps)
 	m = updateModel(m, "j")
 	m = updateModel(m, "j")
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 
+	assert.NotNil(t, m.wizard)
+	assert.Equal(t, 2, m.wizard.total)
 	assert.Equal(t, -1, m.wizard.choices[0], "unselected before enter")
+	assert.Equal(t, -1, m.wizard.choices[1], "step 1 unselected")
 
-	// Enter on option 0 should select app only
+	// Enter on option 0 at step 0 — should select AND auto-advance to step 1
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 	assert.Equal(t, 0, m.wizard.choices[0], "enter should select option 0")
+	assert.Equal(t, 1, m.wizard.step, "enter should auto-advance to step 1")
+	assert.False(t, m.wizard.showingSummary, "should not show summary yet")
 
-	// Move to option 2 and select it
+	// At step 1, move to option 2 and select it — should auto-advance to summary
 	m = updateModel(m, "j")
 	m = updateModel(m, "j")
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
-	assert.Equal(t, 2, m.wizard.choices[0], "should now be option 2")
+	assert.Equal(t, 2, m.wizard.choices[1], "should select option 2 for second agent")
+	assert.True(t, m.wizard.showingSummary, "should show summary after last step")
 }
 
 func TestModel_WizardNextBack(t *testing.T) {
@@ -623,24 +635,27 @@ func TestModel_WizardNextBack(t *testing.T) {
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 
-	// Select option 0 for step 0
+	// Select option 0 for step 0 — auto-advances to step 1
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
-	assert.Equal(t, 0, m.wizard.step)
+	assert.Equal(t, 1, m.wizard.step, "Enter on radio auto-advances to step 1")
+	assert.Equal(t, 0, m.wizard.choices[0], "step 0 choice is stored")
 
-	// 'n' next without selection on step 1 should not advance (it has no selection)
-	// Actually, n on step 0 requires step 0 choice before advancing.
-	// But step 0 is done, so pressing n should advance to step 1.
+	// n without a confirmed choice on step 1 should NOT advance
 	m = updateModel(m, "n")
-	assert.Equal(t, 1, m.wizard.step, "n should advance to step 1 after selection")
+	assert.Equal(t, 1, m.wizard.step, "n without choice should not advance")
 
-	// 'b' goes back to step 0
+	// b goes back to step 0
 	m = updateModel(m, "b")
 	assert.Equal(t, 0, m.wizard.step, "b should go back to step 0")
 
-	// At step 0, 'b' should stay at step 0 (can't go below 0)
+	// At step 0, b should stay at step 0 (can't go below 0)
 	m = updateModel(m, "b")
 	assert.Equal(t, 0, m.wizard.step, "b at step 0 should stay at step 0")
+
+	// n with confirmed choice advances (step 0 already has choice 0)
+	m = updateModel(m, "n")
+	assert.Equal(t, 1, m.wizard.step, "n with confirmed choice should advance to step 1")
 }
 
 func TestModel_WizardCancel(t *testing.T) {
@@ -664,7 +679,7 @@ func TestModel_WizardCancel(t *testing.T) {
 	assert.False(t, m.isSubmitted, "should not submit on cancel")
 }
 
-func TestModel_WizardCompletesAndSubmits(t *testing.T) {
+func TestModel_WizardCompleteThroughSummary(t *testing.T) {
 	m := newModel(agentsForWizard())
 
 	// Deselect claude-code (index 1) — only 1 agent in wizard
@@ -678,13 +693,16 @@ func TestModel_WizardCompletesAndSubmits(t *testing.T) {
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 
-	// Select option 0 (app only) for step 0
+	// Select option 0 (app only) for step 0 — auto-advances to summary
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary, "should show summary after last step")
+	assert.NotNil(t, m.wizard, "wizard should still be active")
 
-	// Advance past last step — wizard completes
-	m = updateModel(m, "n")
-	assert.Nil(t, m.wizard, "wizard should be nil after completion")
+	// Enter on Apply in summary view — completes wizard
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Nil(t, m.wizard, "wizard should be nil after summary Apply")
 	assert.NotNil(t, m.wizardOut, "wizardOut should be populated")
 	assert.Equal(t, 0, m.wizardOut["claude-code"], "claude-code should have choice 0")
 
@@ -774,14 +792,16 @@ func TestModel_SelectedIDsAfterWizard(t *testing.T) {
 	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 
-	// Select option 2 (skip) for the only wizard step
+	// Select option 2 (skip) for the only wizard step — auto-advances to summary
 	m = updateModel(m, "j")
 	m = updateModel(m, "j")
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary, "should be on summary")
 
-	// Complete wizard
-	m = updateModel(m, "n")
+	// Apply on summary completes wizard
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
 	assert.Nil(t, m.wizard)
 	assert.Equal(t, 2, m.wizardOut["opencode"])
 
@@ -817,4 +837,285 @@ func TestModel_DialogBlocksOtherKeys(t *testing.T) {
 	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = mResult.(model)
 	assert.Empty(t, m.showDialog, "Enter should dismiss dialog")
+}
+
+// ──── Wizard Button Tests ─────────────────────────────────────────────────
+
+func TestModel_WizardButtonsRender(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	m.isReady = true
+
+	view := m.View()
+	assert.Contains(t, view, "[ ◄ Back ]", "wizard should show Back button")
+	assert.Contains(t, view, "[ Next ► ]", "wizard should show Next button")
+}
+
+func TestModel_WizardCursorArrowKeys(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	assert.Equal(t, 0, m.wizard.cursor)
+
+	// Down arrow wraps through 5 positions
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mResult.(model)
+	assert.Equal(t, 1, m.wizard.cursor)
+
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mResult.(model)
+	assert.Equal(t, 2, m.wizard.cursor)
+
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mResult.(model)
+	assert.Equal(t, wizardBackIdx, m.wizard.cursor, "down from radio 2 → Back button")
+
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mResult.(model)
+	assert.Equal(t, wizardNextIdx, m.wizard.cursor, "down from Back → Next button")
+
+	// One more wraps to 0
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = mResult.(model)
+	assert.Equal(t, 0, m.wizard.cursor, "down from Next wraps to radio 0")
+
+	// Up wraps to Next
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = mResult.(model)
+	assert.Equal(t, wizardNextIdx, m.wizard.cursor, "up from radio 0 wraps to Next")
+}
+
+func TestModel_WizardEnterOnNextButton(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code and opencode (2 steps)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 for step 0 — auto-advances to step 1
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Equal(t, 1, m.wizard.step)
+
+	// Move cursor to Next button (position 4) on step 1 (no choice yet)
+	m.wizard.cursor = wizardNextIdx
+	assert.Equal(t, -1, m.wizard.choices[1], "step 1 has no choice")
+
+	// Enter on Next without a choice should NOT advance
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Equal(t, 1, m.wizard.step, "Next without choice should not advance")
+
+	// Now set a choice and try Next
+	m.wizard.choices[1] = 1
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary, "Next with choice should advance to summary")
+}
+
+func TestModel_WizardEnterOnBackButton(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code and opencode (2 steps)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 for step 0 — auto-advances to step 1
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Equal(t, 1, m.wizard.step)
+
+	// Navigate to Back button and press Enter
+	m.wizard.cursor = wizardBackIdx
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Equal(t, 0, m.wizard.step, "Back button should go to previous step")
+}
+
+func TestModel_WizardBackDisabledAtStep0(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	assert.Equal(t, 0, m.wizard.step)
+
+	// Navigate to Back button (step 0 — should be disabled)
+	m.wizard.cursor = wizardBackIdx
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Equal(t, 0, m.wizard.step, "Back at step 0 should stay at step 0")
+}
+
+// ──── Summary View Tests ──────────────────────────────────────────────────
+
+func TestModel_SummaryRenders(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code and opencode (2 steps)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 for step 0 — auto-advances to step 1
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 2 for step 1 — auto-advances to summary
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	m.isReady = true
+
+	assert.True(t, m.wizard.showingSummary, "should show summary")
+
+	view := m.View()
+	assert.Contains(t, view, "Summary", "summary title should appear")
+	assert.Contains(t, view, "Claude Code", "agent name should appear")
+	assert.Contains(t, view, "OpenCode", "agent name should appear")
+	assert.Contains(t, view, "Uninstall app only", "first agent's action should appear")
+	assert.Contains(t, view, "Keep installed", "second agent's action should appear")
+	assert.Contains(t, view, "Apply", "Apply button should appear")
+	assert.Contains(t, view, "[ ◄ Back ]", "Back button should appear")
+}
+
+func TestModel_SummaryApplyCompletesWizard(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 — auto-advances to summary
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary)
+
+	// Enter on Apply (cursor=0 in summary) should complete wizard
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.Nil(t, m.wizard, "wizard should be nil after Apply on summary")
+	assert.NotNil(t, m.wizardOut, "wizardOut should be set")
+}
+
+func TestModel_SummaryBackReturnsToLastStep(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code and opencode (2 steps)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 for step 0 — auto-advances to step 1
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 2 for step 1 — auto-advances to summary
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary)
+	assert.Equal(t, 0, m.wizard.cursor, "summary cursor starts at Apply")
+
+	// Navigate to Back and press Enter
+	m = updateModel(m, "j") // cursor → Back
+	assert.Equal(t, 1, m.wizard.cursor)
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	assert.False(t, m.wizard.showingSummary, "should return to step view")
+	assert.Equal(t, 1, m.wizard.step, "should return to last step (index 1)")
+	assert.Equal(t, wizardRadio0, m.wizard.cursor, "cursor should reset to first radio")
+}
+
+func TestModel_SummaryQQuits(t *testing.T) {
+	m := newModel(agentsForWizard())
+
+	// Deselect claude-code
+	m = updateModel(m, "j")
+	m = updateModelKey(m, tea.KeySpace)
+
+	// Start wizard
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	m = updateModel(m, "j")
+	mResult, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+
+	// Select option 0 — auto-advances to summary
+	mResult, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mResult.(model)
+	assert.True(t, m.wizard.showingSummary)
+
+	// q should cancel from summary
+	m = updateModel(m, "q")
+	assert.Nil(t, m.wizard, "q should cancel wizard from summary")
+	assert.False(t, m.isSubmitted, "q should not submit")
 }

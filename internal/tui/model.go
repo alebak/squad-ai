@@ -62,12 +62,22 @@ var (
 // wizardState holds the state for the inline uninstall wizard.
 // When non-nil, the wizard replaces the agent list view.
 type wizardState struct {
-	step    int     // current step index (0-based)
-	total   int     // total number of wizard steps
-	indices []int   // indices into m.agents for deselected installed agents
-	choices []int   // per-step choices (-1=unset, 0=app, 1=app+config, 2=skip)
-	cursor  int     // radio cursor position (0=app only, 1=app+config, 2=skip)
+	step           int     // current step index (0-based)
+	total          int     // total number of wizard steps
+	indices        []int   // indices into m.agents for deselected installed agents
+	choices        []int   // per-step choices (-1=unset, 0=app, 1=app+config, 2=skip)
+	cursor         int     // cursor position: 0-2=radio, 3=Back button, 4=Next button
+	showingSummary bool    // true = show summary view instead of step view
 }
+
+// Cursor positions for the wizard's 5-position cursor (radio options + 2 buttons).
+const (
+	wizardRadio0  = 0 // "Uninstall app only"
+	wizardRadio1  = 1 // "Uninstall app + config data"
+	wizardRadio2  = 2 // "Keep installed (skip)"
+	wizardBackIdx = 3 // "◄ Back" button
+	wizardNextIdx = 4 // "Next ►" button
+)
 
 // ──── Model ──────────────────────────────────────────────────────────────────
 
@@ -228,41 +238,97 @@ func (m model) handleRuneKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // handleWizardKey handles keys when the uninstall wizard is active.
-// It returns tea.Model directly (not a cmd) since wizard mode does not
-// trigger external commands.
+// It dispatches to the summary key handler when showingSummary is true.
 func (m model) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	ws := m.wizard
+
+	// Summary mode has its own simplified cursor (Apply=0, Back=1).
+	if ws.showingSummary {
+		return m.handleSummaryKey(msg)
+	}
+
+	switch {
+	case msg.Type == tea.KeyUp || msg.String() == "k":
+		ws.cursor--
+		if ws.cursor < 0 {
+			ws.cursor = wizardNextIdx // wrap to Next button
+		}
+	case msg.Type == tea.KeyDown || msg.String() == "j":
+		ws.cursor++
+		if ws.cursor > wizardNextIdx {
+			ws.cursor = wizardRadio0 // wrap to first radio
+		}
+	case msg.Type == tea.KeyEnter:
+		switch ws.cursor {
+		case wizardRadio0, wizardRadio1, wizardRadio2:
+			// Store choice and auto-advance
+			ws.choices[ws.step] = ws.cursor
+			m.advanceWizardStep()
+		case wizardBackIdx:
+			// Back button
+			if ws.step > 0 {
+				ws.step--
+				ws.cursor = wizardRadio0
+			}
+		case wizardNextIdx:
+			// Next button — only if choice is confirmed
+			if ws.choices[ws.step] != -1 {
+				m.advanceWizardStep()
+			}
+		}
+	case msg.String() == "n":
+		// Next step shortcut — only if current step has a confirmed choice
+		if ws.choices[ws.step] != -1 {
+			m.advanceWizardStep()
+		}
+	case msg.String() == "b":
+		if ws.step > 0 {
+			ws.step--
+			ws.cursor = wizardRadio0
+		}
+	case msg.String() == "q":
+		// Cancel wizard — return to agent list
+		m.wizard = nil
+	}
+	return m, nil
+}
+
+// advanceWizardStep advances the wizard to the next step or shows the summary
+// view when all steps are complete.
+func (m *model) advanceWizardStep() {
+	ws := m.wizard
+	ws.step++
+	ws.cursor = wizardRadio0
+	if ws.step >= ws.total {
+		ws.showingSummary = true
+	}
+}
+
+// handleSummaryKey handles key presses in the summary view.
+// The summary shows a 2-button choice: Apply (cursor=0) and Back (cursor=1).
+func (m model) handleSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ws := m.wizard
 
 	switch {
 	case msg.Type == tea.KeyUp || msg.String() == "k":
 		ws.cursor--
 		if ws.cursor < 0 {
-			ws.cursor = 2
+			ws.cursor = 1 // wrap to Back
 		}
 	case msg.Type == tea.KeyDown || msg.String() == "j":
 		ws.cursor++
-		if ws.cursor > 2 {
-			ws.cursor = 0
+		if ws.cursor > 1 {
+			ws.cursor = 0 // wrap to Apply
 		}
 	case msg.Type == tea.KeyEnter:
-		// Confirm the current selection
-		ws.choices[ws.step] = ws.cursor
-	case msg.String() == "n":
-		// Next step — only if the current step has a confirmed choice
-		if ws.choices[ws.step] != -1 {
-			ws.step++
-			ws.cursor = 0
-			if ws.step >= ws.total {
-				m.completeWizard()
-			}
-		}
-	case msg.String() == "b":
-		if ws.step > 0 {
-			ws.step--
-			ws.cursor = 0
+		if ws.cursor == 0 { // Apply
+			m.completeWizard()
+		} else { // Back
+			ws.showingSummary = false
+			ws.step = ws.total - 1
+			ws.cursor = wizardRadio0
 		}
 	case msg.String() == "q":
-		// Cancel wizard — return to agent list
 		m.wizard = nil
 	}
 	return m, nil
@@ -440,6 +506,12 @@ func (m model) renderWizardView() string {
 	var b strings.Builder
 
 	ws := m.wizard
+
+	// Dispatch to summary view when showingSummary is true.
+	if ws.showingSummary {
+		return m.renderSummaryView()
+	}
+
 	agent := m.agents[ws.indices[ws.step]]
 
 	// Title: "Step X of Y — Agent Name"
@@ -461,7 +533,6 @@ func (m model) renderWizardView() string {
 		"Keep installed (skip)",
 	}
 
-	choicesMade := false
 	for optIdx, label := range options {
 		prefix := "  "
 		if ws.cursor == optIdx {
@@ -470,15 +541,89 @@ func (m model) renderWizardView() string {
 		// Show checked state
 		if ws.choices[ws.step] == optIdx {
 			prefix = styleGreen.Render("◉ ")
-			choicesMade = true
 		}
 		b.WriteString(fmt.Sprintf("  %s%s%s\n", prefix, "", label))
-		_ = choicesMade
 	}
 
-	b.WriteString("\n\n")
+	// Navigation buttons
+	b.WriteString("\n")
+	backBtn := renderWizardButton("[ ◄ Back ]", ws.cursor == wizardBackIdx, ws.step == 0)
+	nextBtn := renderWizardButton("[ Next ► ]", ws.cursor == wizardNextIdx, ws.choices[ws.step] == -1)
+	b.WriteString(fmt.Sprintf("  %s    %s\n", backBtn, nextBtn))
+
+	b.WriteString("\n")
 	b.WriteString(styleHelp.Render(
-		"enter select • ↑↓ navigate • n next • b back • q quit",
+		"↑↓ navigate • enter select • n next • b back • q quit",
+	))
+
+	return b.String()
+}
+
+// renderWizardButton renders a single navigation button for the wizard.
+// When focused, the button uses the cursor color. When disabled, it uses the
+// subdued surface color.
+func renderWizardButton(label string, focused bool, disabled bool) string {
+	if disabled {
+		return styleSurface.Render(label)
+	}
+	if focused {
+		return styleBlue.Render(label)
+	}
+	return styleGray.Render(label)
+}
+
+// renderSummaryView renders the final summary after all wizard steps.
+// It shows all agents and their chosen actions, with Apply and Back buttons.
+func (m model) renderSummaryView() string {
+	var b strings.Builder
+
+	ws := m.wizard
+
+	b.WriteString(fmt.Sprintf("  %s\n\n",
+		styleMauve.Render(fmt.Sprintf("Step %d of %d — Summary", ws.total, ws.total)),
+	))
+
+	// Action labels for the 3 radio options.
+	actionLabels := []string{
+		"Uninstall app only",
+		"Uninstall app + config data",
+		"Keep installed",
+	}
+
+	for i, idx := range ws.indices {
+		agent := m.agents[idx]
+		choice := ws.choices[i]
+		action := actionLabels[choice]
+		if choice < 0 || choice > 2 {
+			action = "Unknown"
+		}
+		b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
+			styleWhite.Render(agent.Name),
+			styleGray.Render("→"),
+			styleYellow.Render(action),
+		))
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styleSurface.Render("  ──────────────────────────────────────"))
+	b.WriteString("\n")
+
+	// Apply and Back buttons
+	if ws.cursor == 0 {
+		b.WriteString(fmt.Sprintf("  %s    %s\n",
+			styleBlue.Render("▸ Apply"),
+			styleGray.Render("[ ◄ Back ]"),
+		))
+	} else {
+		b.WriteString(fmt.Sprintf("  %s    %s\n",
+			styleGray.Render("  Apply"),
+			styleBlue.Render("[ ◄ Back ]"),
+		))
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styleHelp.Render(
+		"↑↓ navigate • enter select • q quit",
 	))
 
 	return b.String()
