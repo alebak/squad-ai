@@ -92,6 +92,7 @@ type model struct {
 	height    int
 	isSubmitted bool // true when user pressed Enter/Apply to confirm
 	spinner   spinner.Model
+	version   string // build version injected from the cli package
 
 	showDialog string          // non-empty when a dialog is active ("no-changes")
 	wizard     *wizardState    // non-nil when the uninstall wizard is active
@@ -102,7 +103,7 @@ type model struct {
 // Agents with PreChecked=true (and not blocked, not select-all) start checked.
 // Blocked agents cannot be toggled.
 // A sentinel Apply item is appended at the end for confirming the selection.
-func newModel(agents []AgentItem) model {
+func newModel(agents []AgentItem, version string) model {
 	s := spinner.New()
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#cba6f7"))
 
@@ -115,6 +116,7 @@ func newModel(agents []AgentItem) model {
 		cursor:  0,
 		checked: make(map[int]bool, len(agents)),
 		spinner: s,
+		version: version,
 	}
 	for i, a := range agents {
 		if a.PreChecked && !a.Blocked && !a.IsSelectAll && !a.IsDone {
@@ -321,8 +323,11 @@ func (m model) handleSummaryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ws.cursor = 0 // wrap to Apply
 		}
 	case msg.Type == tea.KeyEnter:
-		if ws.cursor == 0 { // Apply
+		if ws.cursor == 0 { // Apply — submit immediately and quit
 			m.completeWizard()
+			m.isSubmitted = true
+			m.wizard = nil
+			return m, tea.Quit
 		} else { // Back
 			ws.showingSummary = false
 			ws.step = ws.total - 1
@@ -400,9 +405,9 @@ func (m model) View() string {
 
 	var b strings.Builder
 
-	// Header with version info: "Squad AI (version 0.15.0)"
+	// Header with version info: "Squad AI (version <build-version>)"
 	b.WriteString(styleMauve.Render("Squad AI"))
-	b.WriteString(styleGray.Render(" (version 0.15.0)"))
+	b.WriteString(styleGray.Render(fmt.Sprintf(" (version %s)", m.version)))
 	b.WriteString("\n\n")
 
 	// Wizard mode replaces the agent list
@@ -702,12 +707,12 @@ func (m model) selectedIDs() []string {
 //
 // Callers MUST distinguish nil from an empty slice: nil means the user
 // wants to exit without taking any action.
-func RunSelection(agents []AgentItem) ([]string, map[string]int, error) {
+func RunSelection(agents []AgentItem, version string) ([]string, map[string]int, error) {
 	if len(agents) == 0 {
 		return nil, nil, nil
 	}
 
-	m := newModel(agents)
+	m := newModel(agents, version)
 	p := tea.NewProgram(m)
 
 	finalModel, err := p.Run()

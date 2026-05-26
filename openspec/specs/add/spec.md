@@ -21,7 +21,7 @@ Installed agents with met runtime dependencies SHALL be pre-checked on TUI load.
 
 Enter SHALL toggle the currently highlighted agent (same behavior as Space), except on the Apply item where Enter SHALL confirm the selection and exit the TUI. Space SHALL also confirm on the Apply item. The `a` key SHALL also confirm the selection from any cursor position.
 
-The header SHALL display "Squad AI (version 0.15.0)" with the mauve color for "Squad AI" and subdued color for the version.
+The header SHALL display "Squad AI (version `<build-version>`)" where `<build-version>` is the value of the `version` variable from the `cli` package, set at build time via ldflags. "Squad AI" SHALL use the mauve color. The version string SHALL use the subdued/overlay color.
 
 The apply sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL NOT appear in the checkbox count.
 
@@ -119,12 +119,13 @@ The apply sentinel SHALL be excluded from `selectedIDs`, `toggleAll`, and SHALL 
 - WHEN the TUI loads
 - THEN the agent checkbox SHALL be unchecked (○)
 
-#### Scenario: Header shows version
+#### Scenario: Header shows build version
 
 - GIVEN the TUI is open
-- THEN the header contains "Squad AI (version 0.15.0)"
+- THEN the header contains "Squad AI (version " followed by the build version
 - AND the "Squad AI" part uses mauve color
 - AND the version part uses subdued/overlay color
+- AND the version SHALL NOT be a hardcoded literal
 
 ### Requirement: TUI Quit Clean Exit
 
@@ -197,9 +198,9 @@ After the last step, instead of completing immediately, the wizard SHALL enter a
 - An "Apply" button and a "Back" button
 - Help text: "↑↓ navigate • enter select • q quit"
 
-On the summary view, Enter on Apply SHALL complete the wizard (same as `completeWizard()`), returning the user to the agent list view with Apply visible. Enter on Back SHALL return to the last wizard step to modify choices. `n`/`b` SHALL NOT work in summary view.
+On the summary view, Enter on Apply SHALL complete the wizard AND submit immediately: `wizardOut` SHALL be populated with all agent choices, `wizard` SHALL be set to nil, `isSubmitted` SHALL be set to true, and `tea.Quit` SHALL be returned. The user SHALL NOT return to the agent list view — the TUI exits directly. Enter on Back SHALL return to the last wizard step to modify choices. `n`/`b` SHALL NOT work in summary view.
 
-After wizard completion (summary Apply pressed), the agent list view SHALL re-appear with the Apply item at the bottom. The user SHALL press Apply again to submit both the selected agent IDs and the wizard choices.
+After wizard completion (summary Apply pressed), the wizard choices SHALL be available via `wizardOut` and `RunSelection` SHALL return them alongside the selected IDs.
 
 (Previously: No visible buttons, no auto-advance — user had to press `n` to advance after selecting with Enter. No summary view — wizard completed immediately after the last agent step.)
 
@@ -330,6 +331,23 @@ If no uninstalls were performed (all choices were "skip"), the flow SHALL procee
 - WHEN the Apply action processes the wizard choices
 - THEN neither `UninstallAgent` nor `UninstallConfig` is called
 - AND the agent stays in the installed map
+
+#### Scenario: Apply on wizard summary submits immediately
+
+- GIVEN the wizard summary view is showing
+- AND the cursor is on the Apply button (cursor=0)
+- WHEN the user presses Enter
+- THEN `wizard` is set to nil
+- AND `isSubmitted` is set to true
+- AND `tea.Quit` is returned
+- AND the user is NOT returned to the agent list view
+
+#### Scenario: Wizard choices accessible after summary submit
+
+- GIVEN the wizard completes through the summary
+- WHEN Apply is pressed on the summary view
+- THEN `wizardOut` is populated with all agent choices
+- AND `RunSelection` returns the wizard choices
 
 ### Requirement: Registry Fetch Failure
 

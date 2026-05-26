@@ -31,7 +31,7 @@ func TestAddCommand_NoTTYShowsAgentList(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			return nil, nil, nil
 		},
 		isRuntimeMet: func(deps []registry.RuntimeDep) bool {
@@ -70,7 +70,7 @@ func TestAddCommand_EmptyRegistry(t *testing.T) {
 		},
 		detectAll:      func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
 		installAll:     func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
-		runSelection:   func(items []tui.AgentItem) ([]string, map[string]int, error) { return nil, nil, nil },
+		runSelection:   func(items []tui.AgentItem, version string) ([]string, map[string]int, error) { return nil, nil, nil },
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error { return nil },
 		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
@@ -97,7 +97,7 @@ func TestAddCommand_RegistryFetchFailure(t *testing.T) {
 		},
 		detectAll:      func(agents []registry.Agent) map[string]bool { return map[string]bool{} },
 		installAll:     func(agents []registry.Agent, progress installer.ProgressFn) []error { return nil },
-		runSelection:   func(items []tui.AgentItem) ([]string, map[string]int, error) { return nil, nil, nil },
+		runSelection:   func(items []tui.AgentItem, version string) ([]string, map[string]int, error) { return nil, nil, nil },
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
 		uninstallAgent: func(agent registry.Agent) error { return nil },
 		configPath:     func() (string, error) { return "/tmp/test-config.json", nil },
@@ -135,7 +135,7 @@ func TestAddCommand_AllAgentsAlreadyHandled(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			return nil, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
@@ -179,7 +179,7 @@ func TestAddCommand_TUISuccessFlow(t *testing.T) {
 			}
 			return []error{nil, nil}
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			return []string{"claude-code", "opencode"}, nil, nil
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
@@ -219,7 +219,7 @@ func TestAddCommand_TUIEmptySelection(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			return []string{}, nil, nil // confirmed empty
 		},
 		isRuntimeMet:   func(deps []registry.RuntimeDep) bool { return true },
@@ -256,7 +256,7 @@ func TestAddCommand_UninstallViaWizardAppOnly(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			callCount++
 			if callCount == 1 {
 				// First TUI: wizard completed with choice 0 for claude-code
@@ -309,7 +309,7 @@ func TestAddCommand_UninstallViaWizardAppAndConfig(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			callCount++
 			if callCount == 1 {
 				return []string{"opencode"}, map[string]int{"claude-code": 1}, nil
@@ -359,7 +359,7 @@ func TestAddCommand_UninstallViaWizardSkip(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			// User chose "Keep installed (skip)" for both agents
 			return []string{}, map[string]int{
 				"claude-code": 2,
@@ -409,7 +409,7 @@ func TestAddCommand_WizardRestartsTUIAfterUninstall(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			runSelectionCallCount++
 			if runSelectionCallCount == 1 {
 				// First TUI: wizard completed with choice 0 for claude-code
@@ -461,7 +461,7 @@ func TestAddCommand_BlockedAgentsShownInTTYFallback(t *testing.T) {
 		installAll: func(agents []registry.Agent, progress installer.ProgressFn) []error {
 			return nil
 		},
-		runSelection: func(items []tui.AgentItem) ([]string, map[string]int, error) {
+		runSelection: func(items []tui.AgentItem, version string) ([]string, map[string]int, error) {
 			return nil, nil, nil
 		},
 		isRuntimeMet: func(deps []registry.RuntimeDep) bool {
