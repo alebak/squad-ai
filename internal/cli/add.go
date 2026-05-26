@@ -250,29 +250,36 @@ func runAddFlowInteractive(h *addHandler, cmd *cobra.Command, agentItems []tui.A
 			cmd.Println("No agents selected. Nothing to install.")
 			return cfg, nil
 		}
-		break
+
+		toInstall := findAgentsByIDs(catalog, selectedIDs)
+		toInstall = filterInstalled(h, toInstall)
+		if len(toInstall) == 0 {
+			cmd.Println("Selected agents are already installed.")
+			agentItems = buildAgentItemsForAdd(h, catalog, installed)
+			continue
+		}
+
+		cmd.Println("Installing selected agents...")
+		results := h.installAll(toInstall, makeProgressFn(cmd, toInstall))
+
+		succeeded, hasErrors := reportAddResults(cmd, toInstall, results)
+		cfg.SelectedAgents = append(cfg.SelectedAgents, succeeded...)
+		if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
+			cmd.Printf("Warning: failed to save config: %v\n", saveErr)
+		}
+
+		// Mark succeeded agents as installed and rebuild TUI items so the
+		// relaunched TUI shows them as checked.
+		for _, id := range succeeded {
+			installed[id] = true
+		}
+		agentItems = buildAgentItemsForAdd(h, catalog, installed)
+
+		if hasErrors {
+			cmd.Println("Some installations failed. You can retry or continue.")
+		}
+		continue
 	} // end for
-
-	toInstall := findAgentsByIDs(catalog, selectedIDs)
-	toInstall = filterInstalled(h, toInstall)
-	if len(toInstall) == 0 {
-		cmd.Println("Selected agents are already installed.")
-		return cfg, nil
-	}
-
-	cmd.Println("Installing selected agents...")
-	results := h.installAll(toInstall, makeProgressFn(cmd, toInstall))
-
-	succeeded, hasErrors := reportAddResults(cmd, toInstall, results)
-	cfg.SelectedAgents = append(cfg.SelectedAgents, succeeded...)
-	if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
-		cmd.Printf("Warning: failed to save config: %v\n", saveErr)
-	}
-
-	if hasErrors {
-		return cfg, fmt.Errorf("one or more installations failed")
-	}
-	return cfg, nil
 }
 
 // filterInstalled removes agents that are already installed from the slice.

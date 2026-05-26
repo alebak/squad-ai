@@ -167,6 +167,72 @@ When the user quits the TUI (via `q`, `Ctrl+C`, or `Escape`), the system MUST ex
 - THEN the system prints "No agents selected. Nothing to install."
 - AND the command returns cleanly
 
+### Requirement: TUI Restart After Installation
+
+After agents are installed through the interactive TUI (`squad add`), the application SHALL return to the TUI showing the updated agent state — with the newly installed agents displayed as checked and installed (◉). When the user quits the relaunched TUI, the application SHALL exit cleanly.
+
+If some agents fail to install and others succeed, the application SHALL still relaunch the TUI showing the updated state for succeeded agents. Error messages SHALL be printed to the terminal before relaunch.
+
+If the user selects agents that are already installed, the application SHALL print "Selected agents are already installed." and loop back to the TUI.
+
+The uninstall wizard restart AND the install restart SHALL coexist — after uninstalling via the wizard, the TUI relaunches showing the deselected state; after installing, the TUI relaunches showing the newly installed state.
+
+(Previously: After installation, the function returned immediately, dropping the user to the terminal.)
+
+#### Scenario: Install one agent and see updated state
+
+- GIVEN the target has no agents installed
+- AND the TUI is launched
+- WHEN the user selects "claude-code"
+- AND confirms installation
+- AND installation succeeds
+- THEN "Installing selected agents..." is printed
+- AND "Claude Code installed" is printed
+- AND the TUI is relaunched
+- AND "claude-code" is shown as checked (PreChecked=true)
+
+#### Scenario: Install then quit
+
+- GIVEN a relaunched TUI after successful installation
+- WHEN the user presses q
+- THEN the application exits with code 0
+
+#### Scenario: All selected agents already installed
+
+- GIVEN "claude-code" is already installed on the target
+- AND the TUI is launched
+- WHEN the user selects "claude-code"
+- AND confirms
+- THEN "Selected agents are already installed." is printed
+- AND the TUI is relaunched
+
+#### Scenario: Uninstall then install — both restarts work
+
+- GIVEN "claude-code" is installed on the target
+- AND the TUI is launched
+- WHEN the user deselects "claude-code" (wizard triggers)
+- AND chooses to uninstall
+- THEN "Uninstalled Claude Code" is printed
+- AND the TUI is relaunched (uninstall restart)
+- WHEN the user selects "opencode"
+- AND confirms installation
+- AND installation succeeds
+- THEN "Installing selected agents..." is printed
+- AND the TUI is relaunched (install restart)
+- WHEN the user quits
+- THEN the application exits with code 0
+
+#### Scenario: Partial installation failure
+
+- GIVEN agents "claude-code" and "opencode" are not installed
+- WHEN the user selects both
+- AND "claude-code" installs successfully but "opencode" fails
+- THEN "Claude Code installed" is printed
+- AND "<error message for opencode>" is printed
+- AND the TUI is relaunched
+- AND "claude-code" is shown as checked
+- AND "opencode" is shown as unchecked
+
 ### Requirement: Uninstall Wizard via TUI
 
 When a user deselects an installed agent (PreChecked → unchecked) and presses Apply, the TUI SHALL enter an inline uninstall wizard mode instead of submitting immediately.
