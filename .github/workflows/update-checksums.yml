@@ -1,0 +1,99 @@
+name: update-checksums
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute checksums and compare
+        id: checksums
+        run: |
+          CHANGED=""
+          while IFS= read -r url; do
+            id=$(echo "$url" | cut -d'|' -f1)
+            script_url=$(echo "$url" | cut -d'|' -f2)
+            current_hash=$(python3 -c "
+      import json, sys
+      data = json.load(open('registry/agents.json'))
+      for a in data['agents']:
+          if a['id'] == '$id' and a['install'].get('url') == '$script_url':
+              c = a.get('checksum')
+              if c: print(c['sha256'])
+      ")
+
+            new_hash=$(curl -fsSL "$script_url" 2>/dev/null | sha256sum | awk '{print $1}')
+
+            if [ -z "$new_hash" ]; then
+              echo "::warning::$id: failed to download $script_url"
+              echo "FAILED|$id|$script_url" >> /tmp/checksums-failed.txt
+              continue
+            fi
+
+            if [ "$current_hash" != "$new_hash" ]; then
+              echo "$id: $current_hash → $new_hash"
+              CHANGED="$CHANGED $id"
+              python3 -c "
+      import json, sys
+      from datetime import datetime, timezone
+      data = json.load(open('registry/agents.json'))
+      for a in data['agents']:
+          if a['id'] == '$id':
+              a['checksum'] = {
+                  'sha256': '$new_hash',
+                  'verified_at': datetime.now(timezone.utc).strftime('%Y-%m-%d')
+              }
+      json.dump(data, open('registry/agents.json', 'w'), indent=2)
+      data['updated_at'] = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+      json.dump(data, open('registry/agents.json', 'w'), indent=2)
+      "
+            fi
+          done < <(python3 -c "
+      import json
+      data = json.load(open('registry/agents.json'))
+      for a in data['agents']:
+          if a['install'].get('url'):
+              print(f\"{a['id']}|{a['install']['url']}\")
+      ")
+
+          if [ -n "$CHANGED" ]; then
+            echo "CHANGED=true" >> $GITHUB_OUTPUT
+          fi
+          if [ -f /tmp/checksums-failed.txt ]; then
+            echo "FAILED=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Open issue for unreachable scripts
+        if: steps.checksums.outputs.FAILED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const failed = fs.readFileSync('/tmp/checksums-failed.txt', 'utf8').trim();
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Checksum update failed for some agents',
+              body: `The following agent install scripts could not be downloaded:\n\n${failed}\n\nThese agents may be unavailable or their URLs may have changed.`,
+              labels: ['bug']
+            });
+
+      - name: Open PR for updated checksums
+        if: steps.checksums.outputs.CHANGED == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'chore(registry): update agent checksums'
+          title: 'chore(registry): update agent checksums'
+          body: 'Checksums for one or more agents have changed. This PR updates the SHA-256 hashes and verified_at timestamps.'
+          branch: chore/update-checksums
+          delete-branch: true
