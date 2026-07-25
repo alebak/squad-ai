@@ -17,11 +17,17 @@
         }
       ],
       "checksum": {
-        "sha256": "b315b46925a9bfb9422f2503dd5aa649f680832f4c076b22d87c39d578c3d830",
-        "verified_at": "2026-05-24"
+        "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
+        "verified_at": "2026-07-24",
+        "content_changed_at": "2026-07-24"
       },
-      "config_paths": ["~/.claude"],
-      "tags": ["anthropic", "claude"],
+      "config_paths": [
+        "~/.claude"
+      ],
+      "tags": [
+        "anthropic",
+        "claude"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -42,10 +48,16 @@
       ],
       "checksum": {
         "sha256": "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e",
-        "verified_at": "2026-05-24"
+        "verified_at": "2026-07-24",
+        "content_changed_at": "2026-07-24"
       },
-      "config_paths": ["~/.config/opencode"],
-      "tags": ["open-source", "opencode"],
+      "config_paths": [
+        "~/.config/opencode"
+      ],
+      "tags": [
+        "open-source",
+        "opencode"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -67,11 +79,17 @@
         }
       ],
       "checksum": {
-        "sha256": "583e42efc398d7141bdd48e125c47deddea16b70d4ecfa8f8d5059b540f3cb01",
-        "verified_at": "2026-05-24"
+        "sha256": "d3ad02c775a6b2a78974b242dd7742a3612cd8be6b58a977516053d9f9897a41",
+        "verified_at": "2026-07-24",
+        "content_changed_at": "2026-07-24"
       },
-      "config_paths": ["~/.pi"],
-      "tags": ["pi", "assistant"],
+      "config_paths": [
+        "~/.pi"
+      ],
+      "tags": [
+        "pi",
+        "assistant"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -92,8 +110,13 @@
         }
       ],
       "checksum": null,
-      "config_paths": ["~/.codex"],
-      "tags": ["openai", "codex"],
+      "config_paths": [
+        "~/.codex"
+      ],
+      "tags": [
+        "openai",
+        "codex"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -114,10 +137,16 @@
       ],
       "checksum": {
         "sha256": "ee1ea43ce4e9e56356c4ab6dad907ef357ae4bdfcaadb682735909fb57c9c640",
-        "verified_at": "2026-05-24"
+        "verified_at": "2026-07-24",
+        "content_changed_at": "2026-07-24"
       },
-      "config_paths": ["~/.gemini/antigravity-cli"],
-      "tags": ["google", "experimental"],
+      "config_paths": [
+        "~/.gemini/antigravity-cli"
+      ],
+      "tags": [
+        "google",
+        "experimental"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -138,8 +167,13 @@
         }
       ],
       "checksum": null,
-      "config_paths": ["~/.gemini"],
-      "tags": ["google", "gemini"],
+      "config_paths": [
+        "~/.gemini"
+      ],
+      "tags": [
+        "google",
+        "gemini"
+      ],
       "added_at": "2026-05-24"
     },
     {
@@ -159,13 +193,19 @@
         }
       ],
       "checksum": {
-        "sha256": "a645a956c2895c844510eb1d455ecdb84d9648da9a44785b22a2bd143f8156ec",
-        "verified_at": "2026-05-24"
+        "sha256": "00e5a4833f00549f069db6840d827090c9e86ac56adadf92e9eb10de31d6de6f",
+        "verified_at": "2026-07-24",
+        "content_changed_at": "2026-07-24"
       },
-      "config_paths": ["~/.gentle-ai"],
-      "tags": ["gentle-ai", "structured"],
+      "config_paths": [
+        "~/.gentle-ai"
+      ],
+      "tags": [
+        "gentle-ai",
+        "structured"
+      ],
       "added_at": "2026-05-24"
     }
   ],
-  "updated_at": "2026-05-24"
+  "updated_at": "2026-07-24"
 }

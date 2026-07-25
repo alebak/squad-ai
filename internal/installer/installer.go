@@ -2,19 +2,95 @@
 package installer
 
 import (
-	"os/exec"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/alebak/squad-ai/internal/registry"
 )
 
-// IsAgentInstalled checks whether a command binary exists in PATH.
-// Returns true if the binary is found and executable, false otherwise.
-func IsAgentInstalled(detectCmd string) bool {
+// userBinDirs returns common directories where package managers and installers
+// place user-local binaries. These are often missing from non-interactive PATH.
+func userBinDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin"),
+		filepath.Join(home, "bin"),
+		filepath.Join(home, ".npm-global", "bin"),
+	}
+}
+
+// pathWithUserBins returns PATH with common user binary directories prepended
+// when they are not already present. Used for child process environments only.
+func pathWithUserBins() string {
+	path := os.Getenv("PATH")
+	parts := filepath.SplitList(path)
+	present := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		present[p] = true
+	}
+
+	var prefix []string
+	for _, dir := range userBinDirs() {
+		if dir == "" || present[dir] {
+			continue
+		}
+		prefix = append(prefix, dir)
+		present[dir] = true
+	}
+	if len(prefix) == 0 {
+		return path
+	}
+	if path == "" {
+		return strings.Join(prefix, string(os.PathListSeparator))
+	}
+	return strings.Join(prefix, string(os.PathListSeparator)) + string(os.PathListSeparator) + path
+}
+
+// isExecutable reports whether info refers to a regular executable file.
+func isExecutable(info fs.FileInfo) bool {
+	mode := info.Mode()
+	if !mode.IsRegular() {
+		return false
+	}
+	return mode&0o111 != 0
+}
+
+// lookInPath searches for detectCmd across PATH plus common user bin dirs
+// without mutating process-global environment state.
+func lookInPath(detectCmd string) bool {
 	if detectCmd == "" {
 		return false
 	}
-	_, err := exec.LookPath(detectCmd)
-	return err == nil
+	// Absolute/relative paths: check directly.
+	if strings.Contains(detectCmd, string(os.PathSeparator)) {
+		info, err := os.Stat(detectCmd)
+		return err == nil && isExecutable(info)
+	}
+
+	for _, dir := range filepath.SplitList(pathWithUserBins()) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, detectCmd)
+		info, err := os.Stat(candidate)
+		if err == nil && isExecutable(info) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsAgentInstalled checks whether a command binary exists in PATH.
+// Common user install directories are included even when the current shell
+// PATH is minimal (non-interactive containers, postCreate hooks).
+// Returns true if the binary is found and executable, false otherwise.
+func IsAgentInstalled(detectCmd string) bool {
+	return lookInPath(detectCmd)
 }
 
 // DetectAll checks all agents from a slice and returns a map of agentID

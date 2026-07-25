@@ -21,7 +21,7 @@ type InstallCmd struct {
 	Method         InstallMethod `json:"method"`
 	URL            string        `json:"url"`
 	Command        string        `json:"command"`
-	NonInteractive bool          `json:"non_interactive"`
+	NonInteractive bool          `json:"non_interactive,omitempty"`
 	UninstallCmd   string        `json:"uninstall,omitempty"`
 }
 
@@ -33,8 +33,12 @@ type RuntimeDep struct {
 
 // Checksum holds verification data for an agent's installation artifact.
 type Checksum struct {
-	SHA256     string `json:"sha256"`
-	VerifiedAt string `json:"verified_at"`
+	SHA256 string `json:"sha256"`
+	// ContentChangedAt is the UTC date (YYYY-MM-DD) when the SHA-256 last changed.
+	ContentChangedAt string `json:"content_changed_at,omitempty"`
+	// VerifiedAt is kept for backward compatibility with older registry readers.
+	// Prefer ContentChangedAt for new writers.
+	VerifiedAt string `json:"verified_at,omitempty"`
 }
 
 // Agent represents a single AI coding agent available in the registry.

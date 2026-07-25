@@ -3,6 +3,7 @@ package installer
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,32 @@ import (
 
 	"github.com/alebak/squad-ai/internal/registry"
 )
+
+// installDeps holds injectable dependencies for installation helpers.
+// Production code uses defaultInstallDeps(); tests pass explicit values.
+type installDeps struct {
+	client         *http.Client
+	allowLocalhost bool
+	allowCustom    bool
+}
+
+func defaultInstallDeps() installDeps {
+	return installDeps{
+		client: newScriptHTTPClient(),
+	}
+}
+
+func newScriptHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("too many redirects")
+			}
+			return validateURL(req.URL.String(), false)
+		},
+	}
+}
 
 // ProgressFn is a callback type for reporting installation progress.
 // The agentID identifies which agent is being installed, and percentage
@@ -32,7 +59,7 @@ func logDir() (string, error) {
 	}
 
 	dir := filepath.Join(cfgDir, "squad-ai", "logs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating log directory: %w", err)
 	}
 	return dir, nil
@@ -43,6 +70,9 @@ func logDir() (string, error) {
 // timestamp are replaced with hyphens for filesystem compatibility.
 // Returns the full path and any error from ensuring the directory exists.
 func logPath(agentID string) (string, error) {
+	if err := validateAgentID(agentID); err != nil {
+		return "", err
+	}
 	dir, err := logDir()
 	if err != nil {
 		return "", err
@@ -56,16 +86,48 @@ func logPath(agentID string) (string, error) {
 // InstallAgent executes an agent's install command, captures its combined
 // stdout and stderr to a log file, and reports progress via the callback.
 //
-// The command is run via "sh -c <command>" to support pipes and shell
-// syntax used by typical agent install scripts (curl | bash, npm install -g).
+// For curl_bash methods, the install script is downloaded once to a temp
+// file, verified against Checksum.SHA256, and then executed from that file
+// so the verified bytes are the executed bytes. Installation is refused if
+// no checksum is provided for a curl_bash method.
 //
-// For curl_bash install methods, the agent's Checksum.SHA256 is verified
-// against the content at agent.Install.URL before execution. Installation
-// is refused if no checksum is provided for a curl_bash method.
+// npm_install and custom methods run as argv (no shell), after validation.
 //
 // On success, progress(agent.ID, 100) is called. On failure, the error
 // is wrapped with additional context and returned.
 func InstallAgent(agent registry.Agent, progress ProgressFn) error {
+	return installAgent(agent, progress, defaultInstallDeps())
+}
+
+func installAgent(agent registry.Agent, progress ProgressFn, deps installDeps) error {
+	if agent.Install.Method == registry.MethodCustom && !deps.allowCustom {
+		return fmt.Errorf("installing %s: custom install method is not allowed from registry data", agent.ID)
+	}
+	if err := validateAgentInstall(agent); err != nil {
+		return err
+	}
+
+	name, args, cleanup, err := buildInstallArgv(agent, deps)
+	if err != nil {
+		return err
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	if err := runAndLog(agent.ID, name, args, progress); err != nil {
+		return err
+	}
+	if agent.DetectCmd != "" && !IsAgentInstalled(agent.DetectCmd) {
+		return fmt.Errorf("installing %s: command succeeded but %s binary not found in PATH", agent.ID, agent.DetectCmd)
+	}
+	return nil
+}
+
+func validateAgentInstall(agent registry.Agent) error {
+	if err := validateAgentID(agent.ID); err != nil {
+		return fmt.Errorf("installing %s: %w", agent.ID, err)
+	}
 	if agent.Install.Command == "" {
 		return fmt.Errorf("installing %s: install command is empty", agent.ID)
 	}
@@ -75,41 +137,98 @@ func InstallAgent(agent registry.Agent, progress ProgressFn) error {
 	if err := validateCommand(agent.Install.Method, agent.Install.Command); err != nil {
 		return fmt.Errorf("installing %s: %w", agent.ID, err)
 	}
-	if agent.Install.Method == registry.MethodCurlBash {
-		if err := verifyChecksum(agent.ID, agent.Install.URL, agent.Checksum); err != nil {
-			return err
-		}
-	}
-	command := agent.Install.Command
-	if agent.Install.NonInteractive {
-		command = wrapNonInteractive(command)
-	}
-	if err := runAndLog(agent.ID, command, progress); err != nil {
-		return err
-	}
-	if !IsAgentInstalled(agent.DetectCmd) {
-		return fmt.Errorf("installing %s: command succeeded but %s binary not found in PATH", agent.ID, agent.DetectCmd)
-	}
 	return nil
 }
 
-// runAndLog executes cmd via sh -c, writes output to a log file, and
-// reports progress on success. Returns a wrapped error on failure.
-func runAndLog(agentID, command string, progress ProgressFn) error {
+// buildInstallArgv resolves the executable and args for an install method.
+// curl_bash downloads+verifies a script and returns [shell, scriptPath].
+// Other methods parse the command into argv without invoking a shell.
+func buildInstallArgv(agent registry.Agent, deps installDeps) (name string, args []string, cleanup func(), err error) {
+	switch agent.Install.Method {
+	case registry.MethodCurlBash:
+		return prepareCurlBashArgv(agent, deps)
+	case registry.MethodNpmInstall, registry.MethodCustom:
+		fields := strings.Fields(agent.Install.Command)
+		if len(fields) == 0 {
+			return "", nil, nil, fmt.Errorf("installing %s: empty command after parsing", agent.ID)
+		}
+		return fields[0], fields[1:], nil, nil
+	default:
+		return "", nil, nil, fmt.Errorf("installing %s: unknown install method %q", agent.ID, agent.Install.Method)
+	}
+}
+
+// prepareCurlBashArgv downloads the install script once, verifies its
+// checksum, and returns argv that executes the verified file.
+func prepareCurlBashArgv(agent registry.Agent, deps installDeps) (name string, args []string, cleanup func(), err error) {
+	scriptPath, err := downloadAndVerifyScript(agent.ID, agent.Install.URL, agent.Checksum, deps)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	cleanup = func() { removeTempScript(scriptPath) }
+
+	shell := pipelineShell(agent.Install.Command)
+	if agent.Install.NonInteractive {
+		// Feed yes into the verified script via shell-less process group:
+		// run `shell scriptPath` with stdin from `yes` using a pipe in runAndLog
+		// is more complex; keep a tiny wrapper argv via `sh -c` only for the
+		// verified local path (no remote content interpolation).
+		return "sh", []string{"-c", "yes | " + shell + " \"$1\"", "squad-install", scriptPath}, cleanup, nil
+	}
+	return shell, []string{scriptPath}, cleanup, nil
+}
+
+// pipelineShell extracts the shell interpreter from a curl|shell pipeline.
+// Defaults to bash when the trailing command is empty or unrecognized.
+func pipelineShell(command string) string {
+	lastPipe := strings.LastIndex(command, "|")
+	if lastPipe < 0 {
+		return "bash"
+	}
+	after := strings.TrimSpace(command[lastPipe+1:])
+	fields := strings.Fields(after)
+	if len(fields) == 0 {
+		return "bash"
+	}
+	base := filepath.Base(fields[0])
+	switch base {
+	case "bash", "sh", "dash", "zsh":
+		return base
+	default:
+		return "bash"
+	}
+}
+
+// runAndLog executes name+args, writes output to a log file, and reports
+// progress on success. Returns a wrapped error on failure.
+func runAndLog(agentID, name string, args []string, progress ProgressFn) error {
 	path, err := logPath(agentID)
 	if err != nil {
 		return fmt.Errorf("preparing log path for %s: %w", agentID, err)
 	}
 
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command(name, args...)
+	// Installers often drop binaries into ~/.local/bin and similar paths that
+	// are missing from non-interactive PATH. Keep the child env consistent
+	// with post-install detection without mutating process-global state.
+	cmd.Env = append(os.Environ(), "PATH="+pathWithUserBins())
 	output, err := cmd.CombinedOutput()
 
-	if writeErr := os.WriteFile(path, output, 0644); writeErr != nil {
+	if writeErr := os.WriteFile(path, output, 0o644); writeErr != nil {
+		// Prefer the install failure if both happened.
+		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return fmt.Errorf("installing %s: command exited with code %d (also failed writing log: %v)", agentID, exitErr.ExitCode(), writeErr)
+			}
+			return fmt.Errorf("installing %s: %w (also failed writing log: %v)", agentID, err, writeErr)
+		}
 		return fmt.Errorf("installing %s: writing log: %w", agentID, writeErr)
 	}
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return fmt.Errorf("installing %s: command exited with code %d (see log: %s)", agentID, exitErr.ExitCode(), path)
 		}
 		return fmt.Errorf("installing %s: %w (see log: %s)", agentID, err, path)
@@ -121,79 +240,166 @@ func runAndLog(agentID, command string, progress ProgressFn) error {
 	return nil
 }
 
-// verifyChecksum downloads the script from url and compares its SHA-256
-// hash against the expected checksum. The URL is validated before the
-// request: it must use HTTPS and target a public host.
-func verifyChecksum(agentID, scriptURL string, cksum *registry.Checksum) error {
+// downloadAndVerifyScript downloads the script from url into a temp file,
+// verifies its SHA-256 against the expected checksum, and returns the path.
+// The caller owns the file and must remove it.
+func downloadAndVerifyScript(agentID, scriptURL string, cksum *registry.Checksum, deps installDeps) (string, error) {
 	if cksum == nil || cksum.SHA256 == "" {
-		return fmt.Errorf("installing %s: checksum required for curl_bash install method", agentID)
+		return "", fmt.Errorf("installing %s: checksum required for curl_bash install method", agentID)
 	}
-	if err := validateURL(scriptURL); err != nil {
-		return fmt.Errorf("installing %s: %w", agentID, err)
+	if err := validateURL(scriptURL, deps.allowLocalhost); err != nil {
+		return "", fmt.Errorf("installing %s: %w", agentID, err)
 	}
 
-	resp, err := http.Get(scriptURL)
+	body, err := fetchScriptBody(agentID, scriptURL, deps.client)
 	if err != nil {
-		return fmt.Errorf("installing %s: downloading script for checksum verification: %w", agentID, err)
+		return "", err
 	}
-	defer resp.Body.Close()
+	return writeVerifiedScript(agentID, body, cksum.SHA256)
+}
+
+func fetchScriptBody(agentID, scriptURL string, client *http.Client) ([]byte, error) {
+	if client == nil {
+		client = defaultInstallDeps().client
+	}
+	req, err := http.NewRequest(http.MethodGet, scriptURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("installing %s: building download request: %w", agentID, err)
+	}
+	req.Header.Set("User-Agent", "squad-ai/"+agentID)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("installing %s: downloading script for checksum verification: %w", agentID, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort close after full read
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("installing %s: script download returned status %d", agentID, resp.StatusCode)
+		return nil, fmt.Errorf("installing %s: script download returned status %d", agentID, resp.StatusCode)
+	}
+	const maxScriptBytes = 5 << 20 // 5 MiB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxScriptBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("installing %s: reading script content: %w", agentID, err)
+	}
+	if len(body) > maxScriptBytes {
+		return nil, fmt.Errorf("installing %s: script exceeds %d byte limit", agentID, maxScriptBytes)
+	}
+	return body, nil
+}
+
+func writeVerifiedScript(agentID string, body []byte, expectedSHA string) (string, error) {
+	got := hex.EncodeToString(sha256Sum(body))
+	if got != expectedSHA {
+		return "", fmt.Errorf("installing %s: checksum mismatch (expected %s, got %s)", agentID, expectedSHA, got)
 	}
 
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, resp.Body); err != nil {
-		return fmt.Errorf("installing %s: hashing script content: %w", agentID, err)
+	tmp, err := os.CreateTemp("", "squad-install-*.sh")
+	if err != nil {
+		return "", fmt.Errorf("installing %s: creating temp script file: %w", agentID, err)
 	}
+	tmpPath := tmp.Name()
 
-	got := hex.EncodeToString(hasher.Sum(nil))
-	if got != cksum.SHA256 {
-		return fmt.Errorf("installing %s: checksum mismatch (expected %s, got %s)", agentID, cksum.SHA256, got)
+	if _, err := tmp.Write(body); err != nil {
+		closeIgnore(tmp)
+		removeTempScript(tmpPath)
+		return "", fmt.Errorf("installing %s: writing temp script file: %w", agentID, err)
 	}
+	if err := tmp.Close(); err != nil {
+		removeTempScript(tmpPath)
+		return "", fmt.Errorf("installing %s: closing temp script file: %w", agentID, err)
+	}
+	if err := os.Chmod(tmpPath, 0o700); err != nil {
+		removeTempScript(tmpPath)
+		return "", fmt.Errorf("installing %s: setting temp script permissions: %w", agentID, err)
+	}
+	return tmpPath, nil
+}
 
+func sha256Sum(body []byte) []byte {
+	sum := sha256.Sum256(body)
+	return sum[:]
+}
+
+func removeTempScript(path string) {
+	// Best-effort cleanup; the primary error must not be masked.
+	_ = os.Remove(path)
+}
+
+func closeIgnore(c interface{ Close() error }) {
+	if c == nil {
+		return
+	}
+	// Best-effort close on error paths; the primary error is returned to the caller.
+	_ = c.Close()
+}
+
+// validateAgentID restricts agent IDs used in filesystem paths.
+func validateAgentID(id string) error {
+	if id == "" {
+		return errors.New("agent id is empty")
+	}
+	if len(id) > 64 {
+		return errors.New("agent id is too long")
+	}
+	for i, r := range id {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+		if i == 0 && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return errors.New("agent id must start with a lowercase letter or digit")
+		}
+		if !ok {
+			return errors.New("agent id must match [a-z0-9-]+")
+		}
+	}
 	return nil
 }
 
 // validateURL checks that u is an HTTPS URL targeting a remote host.
-func validateURL(rawURL string) error {
+func validateURL(rawURL string, allowLocalhost bool) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("URL must use HTTPS scheme")
+		return errors.New("URL must use HTTPS scheme")
 	}
 	if u.Host == "" {
-		return fmt.Errorf("URL must have a host")
+		return errors.New("URL must have a host")
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return fmt.Errorf("URL must not target localhost")
+		if allowLocalhost {
+			return nil
+		}
+		return errors.New("URL must not target localhost")
 	}
 	return nil
 }
 
 // validateCommand checks that the install command matches the expected
-// pattern for its install method. This validates data from the remote
-// registry before it reaches the shell. For MethodCustom, any non-empty
-// command is accepted.
+// pattern for its install method before execution.
 func validateCommand(method registry.InstallMethod, command string) error {
 	switch method {
 	case registry.MethodCurlBash:
 		if !strings.HasPrefix(command, "curl ") {
-			return fmt.Errorf("curl_bash command must start with 'curl '")
+			return errors.New("curl_bash command must start with 'curl '")
 		}
 		if !strings.Contains(command, "|") {
-			return fmt.Errorf("curl_bash command must contain a pipe")
+			return errors.New("curl_bash command must contain a pipe")
 		}
 	case registry.MethodNpmInstall:
-		if !strings.HasPrefix(command, "npm ") {
-			return fmt.Errorf("npm_install command must start with 'npm '")
+		fields := strings.Fields(command)
+		if len(fields) < 2 || fields[0] != "npm" {
+			return errors.New("npm_install command must be an npm argv starting with npm")
 		}
 	case registry.MethodCustom:
-		if len(command) == 0 {
-			return fmt.Errorf("custom command must not be empty")
+		// Custom is intended for local tests/helpers: absolute binary path + args.
+		fields := strings.Fields(command)
+		if len(fields) == 0 {
+			return errors.New("custom command must not be empty")
+		}
+		if !strings.HasPrefix(fields[0], "/") {
+			return errors.New("custom command must be an absolute path")
 		}
 	default:
 		return fmt.Errorf("unknown install method %q", method)
@@ -216,23 +422,6 @@ func InstallAll(agents []registry.Agent, progress ProgressFn) []error {
 		if err != nil {
 			results[i] = fmt.Errorf("[%d] %w", i, err)
 		}
-		// results[i] stays nil on success
 	}
 	return results
 }
-
-// wrapNonInteractive wraps a shell command so that it does not prompt for
-// user input. For curl_bash pipelines, it downloads the script first and
-// runs it with yes piped to stdin. For single commands, it prefixes with yes.
-func wrapNonInteractive(command string) string {
-	if strings.Contains(command, "|") {
-		lastPipe := strings.LastIndex(command, "|")
-		before := strings.TrimSpace(command[:lastPipe])
-		after := strings.TrimSpace(command[lastPipe+1:])
-		tmpFile := "/tmp/squad-install-" + after[:min(4, len(after))]
-		return before + " -o " + tmpFile + " && yes | " + after + " " + tmpFile
-	}
-	return "yes | " + command
-}
-
-
