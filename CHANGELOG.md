@@ -2,6 +2,16 @@
 
 # Changelog
 
+## [0.20.1](https://github.com/alebak/squad-ai/compare/v0.20.0...v0.20.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* **ci:** stop prefixing release tags with package name ([90e377b](https://github.com/alebak/squad-ai/commit/90e377b0c1ad5ef0a38b4f2ca0f7450f2418a323))
+* **ci:** stop prefixing release tags with package name ([dea8ebb](https://github.com/alebak/squad-ai/commit/dea8ebb20bec01f953bd28dae331e1d1041cc2b0))
+* **installer:** detect binaries in ~/.{agent}/bin after install ([f2e7468](https://github.com/alebak/squad-ai/commit/f2e74683e4bebe1694180bcec25c9f3c8b63a12e))
+* **installer:** detect binaries in ~/.{agent}/bin after install ([a470db5](https://github.com/alebak/squad-ai/commit/a470db59569c83978ce32a79864a499d09c91345))
+
 ## [0.20.0](https://github.com/alebak/squad-ai/compare/squad-ai-v0.19.0...squad-ai-v0.20.0) (2026-07-25)
 
 
