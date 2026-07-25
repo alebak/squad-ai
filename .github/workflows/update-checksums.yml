@@ -18,8 +18,6 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
-    env:
-      SQUAD_CHECKSUM_FAILED_PATH: ${{ runner.temp }}/checksums-failed.txt
     steps:
       - uses: actions/checkout@v4
 
@@ -31,15 +29,20 @@ jobs:
         id: checksums
         run: |
           set -uo pipefail
+          # RUNNER_TEMP is injected by GitHub Actions runners into the process env.
+          TMP_DIR="${RUNNER_TEMP:-/tmp}"
+          export SQUAD_CHECKSUM_FAILED_PATH="${TMP_DIR}/checksums-failed.txt"
+          echo "SQUAD_CHECKSUM_FAILED_PATH=${SQUAD_CHECKSUM_FAILED_PATH}" >> "$GITHUB_ENV"
+          OUT_FILE="${TMP_DIR}/checksums-output.txt"
           set +e
-          go run ./scripts/updatechecksums | tee "${RUNNER_TEMP}/checksums-output.txt"
+          go run ./scripts/updatechecksums | tee "${OUT_FILE}"
           status=${PIPESTATUS[0]}
           set -e
 
-          changed="$(grep -E '^CHANGED=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
-          failed="$(grep -E '^FAILED=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
-          changed_ids="$(grep -E '^CHANGED_IDS=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
-          summary="$(grep -E '^SUMMARY=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
+          changed="$(grep -E '^CHANGED=' "${OUT_FILE}" | tail -1 | cut -d= -f2- || true)"
+          failed="$(grep -E '^FAILED=' "${OUT_FILE}" | tail -1 | cut -d= -f2- || true)"
+          changed_ids="$(grep -E '^CHANGED_IDS=' "${OUT_FILE}" | tail -1 | cut -d= -f2- || true)"
+          summary="$(grep -E '^SUMMARY=' "${OUT_FILE}" | tail -1 | cut -d= -f2- || true)"
 
           # go run also exits 1 on compile failure; require sentinel markers so a
           # broken updater cannot look like a successful no-op run.
