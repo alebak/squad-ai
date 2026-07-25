@@ -126,10 +126,13 @@ func installAgent(agent registry.Agent, progress ProgressFn, deps installDeps) e
 
 	reportProgress(progress, agent.ID, 50)
 
-	if err := runAndLog(agent.ID, name, args, nil); err != nil {
+	// Include agent home bin dir so installers that write to ~/.opencode/bin
+	// (and only update interactive ~/.bashrc) still run and detect correctly.
+	extraBin := agentHomeBinDir(agent.ID)
+	if err := runAndLog(agent.ID, name, args, nil, extraBin); err != nil {
 		return err
 	}
-	if agent.DetectCmd != "" && !IsAgentInstalled(agent.DetectCmd) {
+	if agent.DetectCmd != "" && !AgentIsInstalled(agent) {
 		return fmt.Errorf("installing %s: command succeeded but %s binary not found in PATH", agent.ID, agent.DetectCmd)
 	}
 	reportProgress(progress, agent.ID, 100)
@@ -220,7 +223,8 @@ func pipelineShell(command string) string {
 // runAndLog executes name+args and writes combined output to a log file.
 // Returns a wrapped error on failure. progress is reserved for callers that
 // still pass it (uninstall); install flow reports progress outside runAndLog.
-func runAndLog(agentID, name string, args []string, progress ProgressFn) error {
+// extraBinDirs are prepended to PATH for the child process only.
+func runAndLog(agentID, name string, args []string, progress ProgressFn, extraBinDirs ...string) error {
 	path, err := logPath(agentID)
 	if err != nil {
 		return fmt.Errorf("preparing log path for %s: %w", agentID, err)
@@ -230,7 +234,7 @@ func runAndLog(agentID, name string, args []string, progress ProgressFn) error {
 	// Installers often drop binaries into ~/.local/bin and similar paths that
 	// are missing from non-interactive PATH. Keep the child env consistent
 	// with post-install detection without mutating process-global state.
-	cmd.Env = append(os.Environ(), "PATH="+pathWithUserBins())
+	cmd.Env = append(os.Environ(), "PATH="+pathWithUserBins(extraBinDirs...))
 	output, err := cmd.CombinedOutput()
 
 	if writeErr := os.WriteFile(path, output, 0o644); writeErr != nil {
