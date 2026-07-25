@@ -39,14 +39,30 @@ func TestDetectAgent_UserBinDirOutsidePATH(t *testing.T) {
 	assert.True(t, IsAgentInstalled("fake-agent-bin"))
 }
 
+func TestAgentIsInstalled_HomeDotIDBin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	binDir := filepath.Join(home, ".opencode", "bin")
+	require.NoError(t, os.MkdirAll(binDir, 0o755))
+	binPath := filepath.Join(binDir, "opencode")
+	require.NoError(t, os.WriteFile(binPath, []byte("#!/bin/sh\necho ok\n"), 0o755))
+
+	agent := registry.Agent{ID: "opencode", DetectCmd: "opencode"}
+	assert.False(t, IsAgentInstalled("opencode"), "bare PATH check should miss ~/.opencode/bin")
+	assert.True(t, AgentIsInstalled(agent), "agent-aware check should find ~/.opencode/bin")
+}
+
 func TestPathWithUserBins_PrependsMissingDirs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("PATH", "/usr/bin")
 
-	got := pathWithUserBins()
+	got := pathWithUserBins(filepath.Join(home, ".opencode", "bin"))
 	assert.Contains(t, got, filepath.Join(home, ".local", "bin"))
 	assert.Contains(t, got, filepath.Join(home, "bin"))
+	assert.Contains(t, got, filepath.Join(home, ".opencode", "bin"))
 	assert.Contains(t, got, "/usr/bin")
 }
 

@@ -57,7 +57,7 @@ func UninstallAgent(agent registry.Agent) error {
 	default:
 		return fmt.Errorf("uninstalling %s: uninstall binary %q is not in the allowlist", agent.ID, fields[0])
 	}
-	return runAndLog(agent.ID, fields[0], fields[1:], nil)
+	return runAndLog(agent.ID, fields[0], fields[1:], nil /* progress */)
 }
 
 // deriveUninstallCommand returns a derived uninstall command string, or empty

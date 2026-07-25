@@ -24,9 +24,24 @@ func userBinDirs() []string {
 	}
 }
 
+// agentHomeBinDir returns $HOME/.<agentID>/bin when agentID is a safe id.
+// OpenCode and similar installers drop binaries there and only append the dir
+// to interactive shell rc files (e.g. ~/.bashrc), which non-interactive
+// squad runs never source.
+func agentHomeBinDir(agentID string) string {
+	if agentID == "" || strings.Contains(agentID, "..") || strings.ContainsRune(agentID, os.PathSeparator) {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, "."+agentID, "bin")
+}
+
 // pathWithUserBins returns PATH with common user binary directories prepended
 // when they are not already present. Used for child process environments only.
-func pathWithUserBins() string {
+func pathWithUserBins(extraDirs ...string) string {
 	path := os.Getenv("PATH")
 	parts := filepath.SplitList(path)
 	present := make(map[string]bool, len(parts))
@@ -35,12 +50,18 @@ func pathWithUserBins() string {
 	}
 
 	var prefix []string
-	for _, dir := range userBinDirs() {
+	add := func(dir string) {
 		if dir == "" || present[dir] {
-			continue
+			return
 		}
 		prefix = append(prefix, dir)
 		present[dir] = true
+	}
+	for _, dir := range userBinDirs() {
+		add(dir)
+	}
+	for _, dir := range extraDirs {
+		add(dir)
 	}
 	if len(prefix) == 0 {
 		return path
@@ -62,7 +83,7 @@ func isExecutable(info fs.FileInfo) bool {
 
 // lookInPath searches for detectCmd across PATH plus common user bin dirs
 // without mutating process-global environment state.
-func lookInPath(detectCmd string) bool {
+func lookInPath(detectCmd string, extraDirs ...string) bool {
 	if detectCmd == "" {
 		return false
 	}
@@ -72,7 +93,7 @@ func lookInPath(detectCmd string) bool {
 		return err == nil && isExecutable(info)
 	}
 
-	for _, dir := range filepath.SplitList(pathWithUserBins()) {
+	for _, dir := range filepath.SplitList(pathWithUserBins(extraDirs...)) {
 		if dir == "" {
 			continue
 		}
@@ -89,8 +110,22 @@ func lookInPath(detectCmd string) bool {
 // Common user install directories are included even when the current shell
 // PATH is minimal (non-interactive containers, postCreate hooks).
 // Returns true if the binary is found and executable, false otherwise.
+//
+// Prefer AgentIsInstalled when the agent ID is known so $HOME/.<id>/bin is
+// searched (needed for OpenCode and similar installers).
 func IsAgentInstalled(detectCmd string) bool {
 	return lookInPath(detectCmd)
+}
+
+// AgentIsInstalled reports whether agent's detect command is available,
+// including agent-specific home bin dirs that interactive installers add
+// only to shell rc files.
+func AgentIsInstalled(agent registry.Agent) bool {
+	extra := agentHomeBinDir(agent.ID)
+	if extra == "" {
+		return lookInPath(agent.DetectCmd)
+	}
+	return lookInPath(agent.DetectCmd, extra)
 }
 
 // DetectAll checks all agents from a slice and returns a map of agentID
@@ -99,7 +134,7 @@ func IsAgentInstalled(detectCmd string) bool {
 func DetectAll(agents []registry.Agent) map[string]bool {
 	result := make(map[string]bool, len(agents))
 	for _, a := range agents {
-		result[a.ID] = IsAgentInstalled(a.DetectCmd)
+		result[a.ID] = AgentIsInstalled(a)
 	}
 	return result
 }
