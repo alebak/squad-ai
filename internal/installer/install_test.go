@@ -72,17 +72,16 @@ func TestProgressFn_NilSafe(t *testing.T) {
 }
 
 func TestInstallAgent_Success(t *testing.T) {
-	progressCalled := false
+	var pcts []int
 	progress := func(agentID string, percentage int) {
-		progressCalled = true
 		assert.Equal(t, "success-agent", agentID)
-		assert.Equal(t, 100, percentage)
+		pcts = append(pcts, percentage)
 	}
 
 	agent := safeAgent("success-agent", "/bin/true")
 	err := testInstall(agent, progress)
 	assert.NoError(t, err)
-	assert.True(t, progressCalled, "progress callback should be called on success")
+	assert.Equal(t, []int{0, 50, 100}, pcts, "progress should report start, mid, and complete")
 }
 
 func TestInstallAgent_Failure(t *testing.T) {
@@ -278,10 +277,11 @@ func TestInstallAll_EmptySlice(t *testing.T) {
 }
 
 func TestInstallAll_ProgressCalledForEach(t *testing.T) {
-	var calls []string
+	var completed []string
 	progress := func(agentID string, percentage int) {
-		calls = append(calls, agentID)
-		assert.Equal(t, 100, percentage)
+		if percentage == 100 {
+			completed = append(completed, agentID)
+		}
 	}
 
 	agents := []registry.Agent{
@@ -294,13 +294,15 @@ func TestInstallAll_ProgressCalledForEach(t *testing.T) {
 	assert.NoError(t, results[0])
 	assert.NoError(t, results[1])
 
-	assert.Equal(t, []string{"first", "second"}, calls)
+	assert.Equal(t, []string{"first", "second"}, completed)
 }
 
 func TestInstallAll_ErrorsDontStopExecution(t *testing.T) {
-	var calls []string
+	var completed []string
 	progress := func(agentID string, percentage int) {
-		calls = append(calls, agentID)
+		if percentage == 100 {
+			completed = append(completed, agentID)
+		}
 	}
 
 	agents := []registry.Agent{
@@ -317,7 +319,7 @@ func TestInstallAll_ErrorsDontStopExecution(t *testing.T) {
 	assert.NoError(t, results[2])
 
 	// Only successful agents report progress completion.
-	assert.Equal(t, []string{"first", "third"}, calls)
+	assert.Equal(t, []string{"first", "third"}, completed)
 }
 
 // TestInstallAgent_NonExistentBinary tests that a command referencing a

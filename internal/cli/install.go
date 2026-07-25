@@ -155,15 +155,25 @@ func filterInstallableAgents(h *installHandler, cmd *cobra.Command, targets []re
 }
 
 // makeProgressFn creates an install progress callback that prints to cmd.
+// Long agent installs (hundreds of MB) can take minutes; emit start and
+// mid-phase lines so the TUI/CLI does not look frozen.
 func makeProgressFn(cmd *cobra.Command, toInstall []registry.Agent) installer.ProgressFn {
+	names := make(map[string]string, len(toInstall))
+	for _, a := range toInstall {
+		names[a.ID] = a.Name
+	}
 	return func(agentID string, pct int) {
-		if pct == 100 {
-			for _, a := range toInstall {
-				if a.ID == agentID {
-					cmd.Printf("✅ %s installed\n", a.Name)
-					break
-				}
-			}
+		name := names[agentID]
+		if name == "" {
+			name = agentID
+		}
+		switch {
+		case pct <= 0:
+			cmd.Printf("⏳ Installing %s (this may take a few minutes for large downloads)...\n", name)
+		case pct < 100:
+			cmd.Printf("… %s: running installer\n", name)
+		default:
+			cmd.Printf("✅ %s installed\n", name)
 		}
 	}
 }
@@ -283,4 +293,3 @@ func findNewAgents(cfg *config.Config, catalog *registry.Catalog) []registry.Age
 	}
 	return newAgents
 }
-

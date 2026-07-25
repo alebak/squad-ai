@@ -46,6 +46,12 @@ func newScriptHTTPClient() *http.Client {
 // ProgressFn is a callback type for reporting installation progress.
 // The agentID identifies which agent is being installed, and percentage
 // is a value between 0 and 100 indicating estimated completion.
+//
+// Conventional percentages:
+//   - 0: installation of this agent is starting (may download large binaries)
+//   - 50: install script verified; running the installer command
+//   - 100: installation finished successfully
+//
 // Callers should check for nil before calling.
 type ProgressFn func(agentID string, percentage int)
 
@@ -93,8 +99,9 @@ func logPath(agentID string) (string, error) {
 //
 // npm_install and custom methods run as argv (no shell), after validation.
 //
-// On success, progress(agent.ID, 100) is called. On failure, the error
-// is wrapped with additional context and returned.
+// On success, progress(agent.ID, 100) is called. progress(agent.ID, 0) is
+// called when work begins so UIs can show activity during long downloads.
+// On failure, the error is wrapped with additional context and returned.
 func InstallAgent(agent registry.Agent, progress ProgressFn) error {
 	return installAgent(agent, progress, defaultInstallDeps())
 }
@@ -107,6 +114,8 @@ func installAgent(agent registry.Agent, progress ProgressFn, deps installDeps) e
 		return err
 	}
 
+	reportProgress(progress, agent.ID, 0)
+
 	name, args, cleanup, err := buildInstallArgv(agent, deps)
 	if err != nil {
 		return err
@@ -115,13 +124,22 @@ func installAgent(agent registry.Agent, progress ProgressFn, deps installDeps) e
 		defer cleanup()
 	}
 
-	if err := runAndLog(agent.ID, name, args, progress); err != nil {
+	reportProgress(progress, agent.ID, 50)
+
+	if err := runAndLog(agent.ID, name, args, nil); err != nil {
 		return err
 	}
 	if agent.DetectCmd != "" && !IsAgentInstalled(agent.DetectCmd) {
 		return fmt.Errorf("installing %s: command succeeded but %s binary not found in PATH", agent.ID, agent.DetectCmd)
 	}
+	reportProgress(progress, agent.ID, 100)
 	return nil
+}
+
+func reportProgress(progress ProgressFn, agentID string, pct int) {
+	if progress != nil {
+		progress(agentID, pct)
+	}
 }
 
 func validateAgentInstall(agent registry.Agent) error {
@@ -199,8 +217,9 @@ func pipelineShell(command string) string {
 	}
 }
 
-// runAndLog executes name+args, writes output to a log file, and reports
-// progress on success. Returns a wrapped error on failure.
+// runAndLog executes name+args and writes combined output to a log file.
+// Returns a wrapped error on failure. progress is reserved for callers that
+// still pass it (uninstall); install flow reports progress outside runAndLog.
 func runAndLog(agentID, name string, args []string, progress ProgressFn) error {
 	path, err := logPath(agentID)
 	if err != nil {
@@ -234,9 +253,7 @@ func runAndLog(agentID, name string, args []string, progress ProgressFn) error {
 		return fmt.Errorf("installing %s: %w (see log: %s)", agentID, err, path)
 	}
 
-	if progress != nil {
-		progress(agentID, 100)
-	}
+	reportProgress(progress, agentID, 100)
 	return nil
 }
 
