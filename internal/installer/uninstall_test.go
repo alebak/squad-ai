@@ -14,13 +14,18 @@ import (
 // TestUninstallAgent_ExplicitCommand verifies that an explicit UninstallCmd
 // is executed when present.
 func TestUninstallAgent_ExplicitCommand(t *testing.T) {
+	bin := t.TempDir()
+	npm := filepath.Join(bin, "npm")
+	require.NoError(t, os.WriteFile(npm, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	agent := registry.Agent{
 		ID:   "explicit-test",
 		Name: "Explicit Test",
 		Install: registry.InstallCmd{
-			Method:       registry.MethodCustom,
-			Command:      "/bin/true",
-			UninstallCmd: "/bin/true",
+			Method:       registry.MethodNpmInstall,
+			Command:      "npm i -g fake-pkg",
+			UninstallCmd: "npm uninstall -g fake-pkg",
 		},
 	}
 
@@ -31,13 +36,18 @@ func TestUninstallAgent_ExplicitCommand(t *testing.T) {
 // TestUninstallAgent_ExplicitCommandFailure verifies that an explicit
 // UninstallCmd that fails returns an error.
 func TestUninstallAgent_ExplicitCommandFailure(t *testing.T) {
+	bin := t.TempDir()
+	npm := filepath.Join(bin, "npm")
+	require.NoError(t, os.WriteFile(npm, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	agent := registry.Agent{
 		ID:   "explicit-fail",
 		Name: "Explicit Fail",
 		Install: registry.InstallCmd{
-			Method:       registry.MethodCustom,
-			Command:      "/bin/true",
-			UninstallCmd: "/bin/false",
+			Method:       registry.MethodNpmInstall,
+			Command:      "npm i -g fake-pkg",
+			UninstallCmd: "npm uninstall -g fake-pkg",
 		},
 	}
 
@@ -45,6 +55,21 @@ func TestUninstallAgent_ExplicitCommandFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "explicit-fail")
 	assert.Contains(t, err.Error(), "exited with code 1")
+}
+
+// TestUninstallAgent_RejectsNonAllowlistedBinary ensures only package
+// managers can be used as uninstall executables.
+func TestUninstallAgent_RejectsNonAllowlistedBinary(t *testing.T) {
+	agent := registry.Agent{
+		ID: "bad-uninstaller",
+		Install: registry.InstallCmd{
+			Method:       registry.MethodCustom,
+			UninstallCmd: "rm -rf /tmp/something",
+		},
+	}
+	err := UninstallAgent(agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allowlist")
 }
 
 // TestUninstallAgent_NpmFallback verifies that an npm_install agent without
@@ -237,16 +262,17 @@ func TestUninstallAgent_NpmFallbackNoPackage(t *testing.T) {
 // TestUninstallConfig_RemoveDir creates a temp dir, verifies UninstallConfig
 // removes it.
 func TestUninstallConfig_RemoveDir(t *testing.T) {
-	tmpDir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
-	// Create a subdirectory to remove.
-	targetDir := filepath.Join(tmpDir, "test-agent")
+	// Create a subdirectory to remove under home.
+	targetDir := filepath.Join(home, "test-agent")
 	err := os.MkdirAll(targetDir, 0755)
 	require.NoError(t, err)
 
 	agent := registry.Agent{
 		ID:          "test-agent",
-		ConfigPaths: []string{targetDir},
+		ConfigPaths: []string{"~/test-agent"},
 	}
 
 	err = UninstallConfig(agent)
@@ -259,13 +285,31 @@ func TestUninstallConfig_RemoveDir(t *testing.T) {
 // TestUninstallConfig_SkipNonExistent verifies that non-existent paths
 // are skipped without error.
 func TestUninstallConfig_SkipNonExistent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
 	agent := registry.Agent{
 		ID:          "test-agent",
-		ConfigPaths: []string{"/tmp/nonexistent-uninstall-test-abc123"},
+		ConfigPaths: []string{"~/.nonexistent-uninstall-test-abc123"},
 	}
 
 	err := UninstallConfig(agent)
 	assert.NoError(t, err, "non-existent path should be skipped")
+}
+
+// TestUninstallConfig_RejectsAbsoluteOutsideHome verifies absolute paths
+// outside $HOME are refused.
+func TestUninstallConfig_RejectsAbsoluteOutsideHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	agent := registry.Agent{
+		ID:          "test-agent",
+		ConfigPaths: []string{"/etc/ssl"},
+	}
+	err := UninstallConfig(agent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outside home directory")
 }
 
 // TestUninstallConfig_EmptyConfigPaths verifies that nil or empty
@@ -314,16 +358,18 @@ func TestUninstallConfig_TildeExpansion(t *testing.T) {
 
 // TestUninstallConfig_MultiplePaths continues on first error.
 func TestUninstallConfig_MultiplePaths(t *testing.T) {
-	tmpDir := t.TempDir()
-	targetDir := filepath.Join(tmpDir, "test-agent")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	targetDir := filepath.Join(home, "test-agent")
 	err := os.MkdirAll(targetDir, 0755)
 	require.NoError(t, err)
 
 	agent := registry.Agent{
 		ID: "test-agent",
 		ConfigPaths: []string{
-			"~/../etc", // should fail (outside home)
-			targetDir,  // should succeed (valid path)
+			"~/../etc",     // should fail (outside home)
+			"~/test-agent", // should succeed (valid path under home)
 		},
 	}
 

@@ -17,9 +17,9 @@ var safeCmdRe = regexp.MustCompile(`^[a-zA-Z0-9 /@_.:-]+$`)
 // UninstallAgent removes an agent from the system.
 //
 // Resolution order:
-//  1. If agent.Install.UninstallCmd is non-empty, execute it via sh -c.
+//  1. If agent.Install.UninstallCmd is non-empty, execute it as argv (no shell).
 //  2. If method is npm_install, derive "npm uninstall -g <package>" from the
-//     install command.
+//     install command and execute it as argv.
 //  3. If method is curl_bash, resolve the binary via exec.LookPath and delete
 //     it with os.Remove (no shell involved — prevents injection from detect_cmd).
 //  4. Otherwise, return an error indicating no uninstall method is defined.
@@ -29,30 +29,17 @@ func UninstallAgent(agent registry.Agent) error {
 	cmd := agent.Install.UninstallCmd
 
 	if cmd == "" {
-		// No explicit command — derive from the install method.
-		switch agent.Install.Method {
-		case registry.MethodNpmInstall:
-			pkg := ExtractNPMPackage(agent.Install.Command)
-			if pkg == "" {
-				return fmt.Errorf("uninstalling %s: could not extract npm package name from install command %q", agent.ID, agent.Install.Command)
-			}
-			if !npmPkgRe.MatchString(pkg) {
-				return fmt.Errorf("uninstalling %s: extracted package name %q contains invalid characters", agent.ID, pkg)
-			}
-			cmd = fmt.Sprintf("npm uninstall -g %s", pkg)
-
-		case registry.MethodCurlBash:
-			return uninstallCurlBashFallback(agent)
-
-		case registry.MethodCustom:
-			return fmt.Errorf("uninstalling %s: no uninstall command defined for agent with custom install method", agent.ID)
-
-		default:
-			return fmt.Errorf("uninstalling %s: unknown install method %q", agent.ID, agent.Install.Method)
+		derived, err := deriveUninstallCommand(agent)
+		if err != nil {
+			return err
 		}
+		if derived == "" {
+			// curl_bash fallback already performed.
+			return nil
+		}
+		cmd = derived
 	}
 
-	// Validate the (explicit or derived) command before execution.
 	if strings.ContainsRune(cmd, '\x00') {
 		return fmt.Errorf("uninstalling %s: uninstall command contains null byte", agent.ID)
 	}
@@ -60,7 +47,39 @@ func UninstallAgent(agent registry.Agent) error {
 		return fmt.Errorf("uninstalling %s: uninstall command contains invalid characters", agent.ID)
 	}
 
-	return runAndLog(agent.ID, cmd, nil)
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return fmt.Errorf("uninstalling %s: empty uninstall command", agent.ID)
+	}
+	switch fields[0] {
+	case "npm", "pnpm", "yarn":
+		// allowed package managers
+	default:
+		return fmt.Errorf("uninstalling %s: uninstall binary %q is not in the allowlist", agent.ID, fields[0])
+	}
+	return runAndLog(agent.ID, fields[0], fields[1:], nil)
+}
+
+// deriveUninstallCommand returns a derived uninstall command string, or empty
+// string when curl_bash fallback already completed successfully.
+func deriveUninstallCommand(agent registry.Agent) (string, error) {
+	switch agent.Install.Method {
+	case registry.MethodNpmInstall:
+		pkg := ExtractNPMPackage(agent.Install.Command)
+		if pkg == "" {
+			return "", fmt.Errorf("uninstalling %s: could not extract npm package name from install command %q", agent.ID, agent.Install.Command)
+		}
+		if !npmPkgRe.MatchString(pkg) {
+			return "", fmt.Errorf("uninstalling %s: extracted package name %q contains invalid characters", agent.ID, pkg)
+		}
+		return fmt.Sprintf("npm uninstall -g %s", pkg), nil
+	case registry.MethodCurlBash:
+		return "", uninstallCurlBashFallback(agent)
+	case registry.MethodCustom:
+		return "", fmt.Errorf("uninstalling %s: no uninstall command defined for agent with custom install method", agent.ID)
+	default:
+		return "", fmt.Errorf("uninstalling %s: unknown install method %q", agent.ID, agent.Install.Method)
+	}
 }
 
 // uninstallCurlBashFallback resolves the binary path via exec.LookPath and
@@ -80,12 +99,10 @@ func uninstallCurlBashFallback(agent registry.Agent) error {
 
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
-			// Race condition: someone else removed it between LookPath and Remove.
 			return nil
 		}
 		return fmt.Errorf("uninstalling %s: removing binary at %s: %w", agent.ID, path, err)
 	}
-
 	return nil
 }
 
@@ -104,7 +121,6 @@ func UninstallConfig(agent registry.Agent) error {
 	if len(agent.ConfigPaths) == 0 {
 		return nil
 	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("uninstalling config for %s: cannot determine home dir: %w", agent.ID, err)
@@ -112,45 +128,37 @@ func UninstallConfig(agent registry.Agent) error {
 
 	var firstErr error
 	for _, p := range agent.ConfigPaths {
-		resolved := p
-
-		// Expand "~" to home directory.
-		if strings.HasPrefix(resolved, "~") {
-			resolved = filepath.Join(home, resolved[1:])
-		}
-
-		// Resolve to absolute path (handles ".." and relative paths).
-		absPath, err := filepath.Abs(resolved)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("uninstalling config for %s: resolving path %q: %w", agent.ID, p, err)
-			}
-			continue
-		}
-
-		// Security check: for paths that started with "~", verify the
-		// resolved path stays within the home directory (prevents "~/.."
-		// traversal).
-		if strings.HasPrefix(p, "~") && !strings.HasPrefix(absPath, home) {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("uninstalling config for %s: path %q resolves outside home directory", agent.ID, p)
-			}
-			continue
-		}
-
-		// Skip non-existent paths.
-		if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
-			continue
-		}
-
-		if err := os.RemoveAll(absPath); err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("uninstalling config for %s: removing %s: %w", agent.ID, absPath, err)
-			}
+		if err := removeConfigPath(agent.ID, home, p); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-
 	return firstErr
+}
+
+func removeConfigPath(agentID, home, raw string) error {
+	resolved := raw
+	if strings.HasPrefix(resolved, "~") {
+		resolved = filepath.Join(home, resolved[1:])
+	}
+
+	absPath, err := filepath.Abs(resolved)
+	if err != nil {
+		return fmt.Errorf("uninstalling config for %s: resolving path %q: %w", agentID, raw, err)
+	}
+
+	// All registry config paths must stay inside the user's home directory.
+	rel, err := filepath.Rel(home, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("uninstalling config for %s: path %q resolves outside home directory", agentID, raw)
+	}
+
+	if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
+		return nil
+	}
+	if err := os.RemoveAll(absPath); err != nil {
+		return fmt.Errorf("uninstalling config for %s: removing %s: %w", agentID, absPath, err)
+	}
+	return nil
 }
 
 // ExtractNPMPackage extracts the npm package name from an install command.

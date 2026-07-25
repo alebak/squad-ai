@@ -193,3 +193,28 @@ func TestFetch_EmptyCatalog(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result.Agents, 0)
 }
+
+func TestBundledAgentsJSON_CurlBashRequiresChecksum(t *testing.T) {
+	// Validate the real registry checked into the repo.
+	path := filepath.Join("..", "..", "registry", "agents.json")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var catalog Catalog
+	require.NoError(t, json.Unmarshal(data, &catalog))
+	require.NotEmpty(t, catalog.Agents)
+
+	for _, agent := range catalog.Agents {
+		require.NotEmpty(t, agent.ID)
+		require.NotEmpty(t, agent.Install.Method)
+		if agent.Install.Method != MethodCurlBash {
+			continue
+		}
+		require.NotEmpty(t, agent.Install.URL, "curl_bash agent %s needs install.url", agent.ID)
+		require.True(t, len(agent.Install.URL) >= 8 && agent.Install.URL[:8] == "https://",
+			"curl_bash agent %s URL must be https", agent.ID)
+		require.NotNil(t, agent.Checksum, "curl_bash agent %s requires checksum", agent.ID)
+		require.NotEmpty(t, agent.Checksum.SHA256, "curl_bash agent %s requires sha256", agent.ID)
+		require.Len(t, agent.Checksum.SHA256, 64, "curl_bash agent %s sha256 must be 64 hex chars", agent.ID)
+	}
+}

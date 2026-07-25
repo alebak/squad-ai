@@ -2,8 +2,13 @@ name: update-checksums
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
+    # Daily — upstream install scripts drift often enough to break clean installs.
+    - cron: "0 6 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: update-checksums
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -13,87 +18,123 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      SQUAD_CHECKSUM_FAILED_PATH: ${{ runner.temp }}/checksums-failed.txt
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Compute checksums and compare
         id: checksums
         run: |
-          CHANGED=""
-          while IFS= read -r url; do
-            id=$(echo "$url" | cut -d'|' -f1)
-            script_url=$(echo "$url" | cut -d'|' -f2)
-            current_hash=$(python3 -c "
-      import json, sys
-      data = json.load(open('registry/agents.json'))
-      for a in data['agents']:
-          if a['id'] == '$id' and a['install'].get('url') == '$script_url':
-              c = a.get('checksum')
-              if c: print(c['sha256'])
-      ")
+          set -uo pipefail
+          set +e
+          go run ./scripts/updatechecksums | tee "${RUNNER_TEMP}/checksums-output.txt"
+          status=${PIPESTATUS[0]}
+          set -e
 
-            new_hash=$(curl -fsSL "$script_url" 2>/dev/null | sha256sum | awk '{print $1}')
+          changed="$(grep -E '^CHANGED=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
+          failed="$(grep -E '^FAILED=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
+          changed_ids="$(grep -E '^CHANGED_IDS=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
+          summary="$(grep -E '^SUMMARY=' "${RUNNER_TEMP}/checksums-output.txt" | tail -1 | cut -d= -f2- || true)"
 
-            if [ -z "$new_hash" ]; then
-              echo "::warning::$id: failed to download $script_url"
-              echo "FAILED|$id|$script_url" >> /tmp/checksums-failed.txt
-              continue
-            fi
-
-            if [ "$current_hash" != "$new_hash" ]; then
-              echo "$id: $current_hash → $new_hash"
-              CHANGED="$CHANGED $id"
-              python3 -c "
-      import json, sys
-      from datetime import datetime, timezone
-      data = json.load(open('registry/agents.json'))
-      for a in data['agents']:
-          if a['id'] == '$id':
-              a['checksum'] = {
-                  'sha256': '$new_hash',
-                  'verified_at': datetime.now(timezone.utc).strftime('%Y-%m-%d')
-              }
-      json.dump(data, open('registry/agents.json', 'w'), indent=2)
-      data['updated_at'] = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-      json.dump(data, open('registry/agents.json', 'w'), indent=2)
-      "
-            fi
-          done < <(python3 -c "
-      import json
-      data = json.load(open('registry/agents.json'))
-      for a in data['agents']:
-          if a['install'].get('url'):
-              print(f\"{a['id']}|{a['install']['url']}\")
-      ")
-
-          if [ -n "$CHANGED" ]; then
-            echo "CHANGED=true" >> $GITHUB_OUTPUT
+          # go run also exits 1 on compile failure; require sentinel markers so a
+          # broken updater cannot look like a successful no-op run.
+          if [ -z "$changed" ] || [ -z "$failed" ]; then
+            echo "checksum updater produced no sentinel output (status=$status)" >&2
+            exit 1
           fi
-          if [ -f /tmp/checksums-failed.txt ]; then
-            echo "FAILED=true" >> $GITHUB_OUTPUT
+
+          echo "CHANGED=${changed}" >> "$GITHUB_OUTPUT"
+          echo "FAILED=${failed}" >> "$GITHUB_OUTPUT"
+          echo "CHANGED_IDS=${changed_ids:-}" >> "$GITHUB_OUTPUT"
+          {
+            echo "SUMMARY<<EOF"
+            echo "${summary:-}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          # Exit 1 means some downloads failed; still continue so we can open
+          # an issue and/or PR for any successful hash updates.
+          if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+            echo "checksum updater failed with unexpected status $status" >&2
+            exit "$status"
           fi
 
       - name: Open issue for unreachable scripts
-        if: steps.checksums.outputs.FAILED == 'true'
+        if: ${{ !cancelled() && steps.checksums.outputs.FAILED == 'true' }}
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const failed = fs.readFileSync('/tmp/checksums-failed.txt', 'utf8').trim();
-            await github.rest.issues.create({
+            const failedPath = process.env.SQUAD_CHECKSUM_FAILED_PATH;
+            const failed = fs.existsSync(failedPath)
+              ? fs.readFileSync(failedPath, 'utf8').trim()
+              : '(no failure details file)';
+            const title = 'Checksum update failed for some agents';
+            const isLocal = failed.split('\n').every((line) => line.startsWith('LOCAL|'));
+            const body = isLocal
+              ? [
+                  'The checksum updater failed locally before checking upstream scripts:',
+                  '',
+                  '```',
+                  failed,
+                  '```',
+                ].join('\n')
+              : [
+                  'The following agent install scripts could not be downloaded:',
+                  '',
+                  '```',
+                  failed,
+                  '```',
+                  '',
+                  'These agents may be unavailable or their URLs may have changed.',
+                ].join('\n');
+
+            const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: 'Checksum update failed for some agents',
-              body: `The following agent install scripts could not be downloaded:\n\n${failed}\n\nThese agents may be unavailable or their URLs may have changed.`,
-              labels: ['bug']
+              state: 'open',
+              labels: 'bug',
+              per_page: 100,
             });
+            const existing = issues.data.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `Recheck failed again:\n\n\`\`\`\n${failed}\n\`\`\``,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['bug'],
+              });
+            }
 
       - name: Open PR for updated checksums
-        if: steps.checksums.outputs.CHANGED == 'true'
+        if: ${{ !cancelled() && steps.checksums.outputs.CHANGED == 'true' }}
         uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: 'chore(registry): update agent checksums'
-          title: 'chore(registry): update agent checksums'
-          body: 'Checksums for one or more agents have changed. This PR updates the SHA-256 hashes and verified_at timestamps.'
+          commit-message: "chore(registry): update agent checksums"
+          title: "chore(registry): update agent checksums"
+          body: |
+            Checksums for one or more agents changed.
+
+            ## Delta
+            ${{ steps.checksums.outputs.SUMMARY }}
+
+            Changed agents: `${{ steps.checksums.outputs.CHANGED_IDS }}`
+
+            This PR updates SHA-256 hashes (and `content_changed_at` / legacy `verified_at`) in `registry/agents.json` when upstream install script **content** changes.
+
+            **Security note:** auto-updates trust current upstream content. Before merging, open each changed URL and review the script diff, not only the hash.
           branch: chore/update-checksums
           delete-branch: true
