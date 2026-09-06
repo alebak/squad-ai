@@ -1,71 +1,83 @@
 {
   "agents": [
     {
-      "id": "claude-code",
-      "name": "Claude Code",
+      "added_at": "2026-05-24",
+      "checksum": {
+        "sha256": "3a68d3406cf674e17bed1733a4dcf37805e2e47d87417700007d7e1aa766a944",
+        "content_changed_at": "2026-09-06",
+        "verified_at": "2026-09-06"
+      },
+      "config_paths": [
+        "~/.claude"
+      ],
+      "dependencies": [
+        {
+          "runtime": "none"
+        }
+      ],
       "description": "Anthropic's AI coding agent for terminal-based development",
-      "version": "latest",
       "detect_command": "claude",
+      "id": "claude-code",
       "install": {
         "method": "curl_bash",
         "url": "https://claude.ai/install.sh",
         "command": "curl -fsSL https://claude.ai/install.sh | bash"
       },
+      "name": "Claude Code",
+      "tags": [
+        "anthropic",
+        "claude"
+      ],
+      "version": "latest"
+    },
+    {
+      "added_at": "2026-05-24",
+      "checksum": {
+        "sha256": "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e",
+        "content_changed_at": "2026-07-24",
+        "verified_at": "2026-07-24"
+      },
+      "config_paths": [
+        "~/.config/opencode"
+      ],
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": {
-        "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
-        "verified_at": "2026-07-24",
-        "content_changed_at": "2026-07-24"
-      },
-      "config_paths": [
-        "~/.claude"
-      ],
-      "tags": [
-        "anthropic",
-        "claude"
-      ],
-      "added_at": "2026-05-24"
-    },
-    {
-      "id": "opencode",
-      "name": "OpenCode",
       "description": "An open-source AI coding agent for terminal-based development",
-      "version": "latest",
       "detect_command": "opencode",
+      "id": "opencode",
       "install": {
         "method": "curl_bash",
         "url": "https://opencode.ai/install",
         "command": "curl -fsSL https://opencode.ai/install | bash"
       },
-      "dependencies": [
-        {
-          "runtime": "none"
-        }
-      ],
-      "checksum": {
-        "sha256": "fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e",
-        "verified_at": "2026-07-24",
-        "content_changed_at": "2026-07-24"
-      },
-      "config_paths": [
-        "~/.config/opencode"
-      ],
+      "name": "OpenCode",
       "tags": [
         "open-source",
         "opencode"
       ],
-      "added_at": "2026-05-24"
+      "version": "latest"
     },
     {
-      "id": "pi",
-      "name": "Pi",
+      "added_at": "2026-05-24",
+      "checksum": {
+        "sha256": "a3a3604ee550bf72c5da7da3c3014cc361c14ab3b91b1b24f097d9022bd8de5b",
+        "content_changed_at": "2026-09-06",
+        "verified_at": "2026-09-06"
+      },
+      "config_paths": [
+        "~/.pi"
+      ],
+      "dependencies": [
+        {
+          "runtime": "node"
+        }
+      ],
       "description": "A lightweight AI coding assistant for the terminal",
-      "version": "latest",
       "detect_command": "pi",
+      "id": "pi",
       "install": {
         "method": "curl_bash",
         "url": "https://pi.dev/install.sh",
@@ -73,139 +85,127 @@
         "non_interactive": true,
         "uninstall": "npm uninstall -g @earendil-works/pi-coding-agent"
       },
+      "name": "Pi",
+      "tags": [
+        "pi",
+        "assistant"
+      ],
+      "version": "latest"
+    },
+    {
+      "added_at": "2026-05-24",
+      "checksum": null,
+      "config_paths": [
+        "~/.codex"
+      ],
       "dependencies": [
         {
           "runtime": "node"
         }
       ],
-      "checksum": {
-        "sha256": "d3ad02c775a6b2a78974b242dd7742a3612cd8be6b58a977516053d9f9897a41",
-        "verified_at": "2026-07-24",
-        "content_changed_at": "2026-07-24"
-      },
-      "config_paths": [
-        "~/.pi"
-      ],
-      "tags": [
-        "pi",
-        "assistant"
-      ],
-      "added_at": "2026-05-24"
-    },
-    {
-      "id": "codex",
-      "name": "Codex CLI",
       "description": "OpenAI's terminal-based AI coding agent",
-      "version": "latest",
       "detect_command": "codex",
+      "id": "codex",
       "install": {
         "method": "npm_install",
         "url": "",
         "command": "npm i -g @openai/codex",
         "uninstall": "npm uninstall -g @openai/codex"
       },
-      "dependencies": [
-        {
-          "runtime": "node"
-        }
-      ],
-      "checksum": null,
-      "config_paths": [
-        "~/.codex"
-      ],
+      "name": "Codex CLI",
       "tags": [
         "openai",
         "codex"
       ],
-      "added_at": "2026-05-24"
+      "version": "latest"
     },
     {
-      "id": "antigravity-cli",
-      "name": "Antigravity CLI",
-      "description": "Google's experimental AI coding agent",
-      "version": "latest",
-      "detect_command": "agy",
-      "install": {
-        "method": "curl_bash",
-        "url": "https://antigravity.google/cli/install.sh",
-        "command": "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+      "added_at": "2026-05-24",
+      "checksum": {
+        "sha256": "ee1ea43ce4e9e56356c4ab6dad907ef357ae4bdfcaadb682735909fb57c9c640",
+        "content_changed_at": "2026-07-24",
+        "verified_at": "2026-07-24"
       },
+      "config_paths": [
+        "~/.gemini/antigravity-cli"
+      ],
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": {
-        "sha256": "ee1ea43ce4e9e56356c4ab6dad907ef357ae4bdfcaadb682735909fb57c9c640",
-        "verified_at": "2026-07-24",
-        "content_changed_at": "2026-07-24"
+      "description": "Google's experimental AI coding agent",
+      "detect_command": "agy",
+      "id": "antigravity-cli",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://antigravity.google/cli/install.sh",
+        "command": "curl -fsSL https://antigravity.google/cli/install.sh | bash"
       },
-      "config_paths": [
-        "~/.gemini/antigravity-cli"
-      ],
+      "name": "Antigravity CLI",
       "tags": [
         "google",
         "experimental"
       ],
-      "added_at": "2026-05-24"
+      "version": "latest"
     },
     {
-      "id": "gemini-cli",
-      "name": "Gemini CLI",
+      "added_at": "2026-05-24",
+      "checksum": null,
+      "config_paths": [
+        "~/.gemini"
+      ],
+      "dependencies": [
+        {
+          "runtime": "node"
+        }
+      ],
       "description": "Google's Gemini-powered AI coding assistant for the terminal",
-      "version": "latest",
       "detect_command": "gemini",
+      "id": "gemini-cli",
       "install": {
         "method": "npm_install",
         "url": "",
         "command": "npm install -g @google/gemini-cli",
         "uninstall": "npm uninstall -g @google/gemini-cli"
       },
-      "dependencies": [
-        {
-          "runtime": "node"
-        }
-      ],
-      "checksum": null,
-      "config_paths": [
-        "~/.gemini"
-      ],
+      "name": "Gemini CLI",
       "tags": [
         "google",
         "gemini"
       ],
-      "added_at": "2026-05-24"
+      "version": "latest"
     },
     {
-      "id": "gentle-ai",
-      "name": "Gentle AI",
-      "description": "An opinionated AI coding agent with structured workflows",
-      "version": "latest",
-      "detect_command": "gentle-ai",
-      "install": {
-        "method": "curl_bash",
-        "url": "https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh",
-        "command": "curl -fsSL https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh | bash"
+      "added_at": "2026-05-24",
+      "checksum": {
+        "sha256": "bd2cb21f77994fb9d36f2e086fc32cf212e97036cd75f0b0c30e3fe637a779fd",
+        "content_changed_at": "2026-09-06",
+        "verified_at": "2026-09-06"
       },
+      "config_paths": [
+        "~/.gentle-ai"
+      ],
       "dependencies": [
         {
           "runtime": "none"
         }
       ],
-      "checksum": {
-        "sha256": "00e5a4833f00549f069db6840d827090c9e86ac56adadf92e9eb10de31d6de6f",
-        "verified_at": "2026-07-24",
-        "content_changed_at": "2026-07-24"
+      "description": "An opinionated AI coding agent with structured workflows",
+      "detect_command": "gentle-ai",
+      "id": "gentle-ai",
+      "install": {
+        "method": "curl_bash",
+        "url": "https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh",
+        "command": "curl -fsSL https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh | bash"
       },
-      "config_paths": [
-        "~/.gentle-ai"
-      ],
+      "name": "Gentle AI",
       "tags": [
         "gentle-ai",
         "structured"
       ],
-      "added_at": "2026-05-24"
+      "version": "latest"
     }
   ],
-  "updated_at": "2026-07-24"
+  "updated_at": "2026-09-06"
 }
